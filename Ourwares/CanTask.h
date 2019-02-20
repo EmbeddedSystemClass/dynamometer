@@ -30,6 +30,7 @@ struct CANRCVBUFN
 {
 	struct CANRCVBUF can;	   // Our standard CAN msg
 	struct CAN_CTLBLOCK* pctl;	// Pointer to control block for this CAN
+	uint32_t dtw;              // DTW counter time of CAN msg arrival
 };
 
 /* *************************************************************************/

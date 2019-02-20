@@ -30,6 +30,7 @@ This simplifies the issue of disabling of interrupts
 
 #include "CanTask.h"
 #include "can_iface.h"
+#include "DTW_counter.h"
 
 
 
@@ -405,6 +406,8 @@ uint32_t debug1;
 
 static void unloadfifo(CAN_HandleTypeDef *phcan, uint32_t RxFifo)
 {
+	struct CANRCVBUFN ncan; // CAN msg plus pctl
+	ncan.dtw = DTWTIME;
 debug1 += 1;
 	HAL_StatusTypeDef ret;
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -412,7 +415,6 @@ debug1 += 1;
 	uint8_t data[8];
 
 	struct CAN_CTLBLOCK* pctl = getpctl(phcan); // Lookup pctl given phcan
-	struct CANRCVBUFN ncan; // CAN msg plus pctl
 
 	do /* Unload hardware RX FIFO */
 	{
