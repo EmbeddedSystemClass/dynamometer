@@ -75,10 +75,76 @@ static void canmsg_compress(struct CANRCVBUF *pcan, CAN_RxHeaderTypeDef *phal, u
 	return;
 }
 /******************************************************************************
- * struct CAN_CTLBLOCK* can_iface_init(CAN_HandleTypeDef *phcan, uint32_t numtx);
+ * struct CANCIRBUFPTRS* can_iface_add_take(struct CAN_CTLBLOCK*  pctl)
+ * @brief 	: Get a 'take' pointer for accessing CAN msgs in the circular buffer
+ * @param	: pctl = pointer to our CAN control block
+ * @return	: pointer to pointer pointing to 'take' location in circular CAN buffer
+*******************************************************************************/
+struct CANCIRBUFPTRS* can_iface_add_take(struct CAN_CTLBLOCK*  pctl)
+{
+	struct CANTAKEPTR* p;
+	
+taskENTER_CRITICAL();
+	/* Get one measily pointer */
+	p = (struct CANTAKEPTR*)calloc(1, sizeof(struct CANTAKEPTR));
+	if (p == NULL){ taskEXIT_CRITICAL();return NULL;}
+
+	/* Initialize the pointer to curret add location of the circular buffer. */
+   /* Given 'p', the beginning, end, and location CAN msgs are being added
+      can be accessed. */
+	p->cir  = pctl->pcir;
+
+	/* Start the 'take' pointer at the position in the circular buffer where
+      CAN msgs are being added. */
+	p->take = pctl->pcir->pwork;
+taskEXIT_CRITICAL();
+	return p;
+}
+/******************************************************************************
+ * struct CANCIRBUFPTRS* can_iface_mbx_init(struct CAN_CTLBLOCK*  pctl, osThreadId tskhandle, uint32_t notebit)
+ * @brief 	: Initialize the mailbox task notification and get a 'take pointer for it.
+ * @brief	: tskhandle = task handle that will be used for notification; NULL = use current task
+ * @return	: pointer to pointer pointing to 'take' location in circular CAN buffer 
+*******************************************************************************/
+struct CANCIRBUFPTRS* can_iface_mbx_init(struct CAN_CTLBLOCK*  pctl, osThreadId tskhandle, uint32_t notebit)
+{
+	if (tskhandle == NULL)
+	{ // Here, use the current running Task
+		tskhandle = xTaskGetCurrentTaskHandle();
+	}
+
+	/* Notification of CAN msgs added to the circular buffer are only for one task. */
+	pctl->tsknote.tskhandle = tskhandle;
+	pctk->tsknote.notebit   = notebit;
+
+	/* The 'add' pointer was setup in 'can_iface_init' below */
+	
+	/* Get a 'take' pointer into the circular buffer */
+	return can_iface_add_take(pctl);
+}
+/******************************************************************************
+ * struct CANRCVBUFN* can_iface_get_CANmsg(struct CANCIRBUFPTRS* p);
+ * @brief 	: Get a pointer to the next available CAN msg and step ahead in the circular buffer
+ * @brief	: p = pointer to struct with 'take' and 'add' pointers
+ * @return	: pointer to CAN msg struct; NULL = no msgs available.
+*******************************************************************************/
+struct CANRCVBUFN* can_iface_get_CANmsg(struct CANCIRBUFPTRS* p)
+{
+	struct CANRCVBUFN* ptmp = NULL;
+	if (p->pcir->pwork == p->ptake) return ptmp;
+
+	ptmp = p->take;
+	p->ptake += 1;
+	if (p->ptake == p->pcir->pend) p->take = p->pcir->pbegin;
+
+	return ptmp;	
+}
+/******************************************************************************
+ * struct CAN_CTLBLOCK* can_iface_init(CAN_HandleTypeDef *phcan, uint32_t numtx, uint32_t numrx);
  * @brief 	: Setup linked list for TX priority sorted buffering
  * @param	: phcan = Pointer "handle" to HAL control block for CAN module
  * @param	: numtx = number of CAN msgs for TX buffering
+ * @param	: numrx = number of incoming (and loopback) CAN msgs in circular buffer
  * @return	: Pointer to our knows-all control block for this CAN
  *		:  NULL = calloc failed
  *		:  Pointer->ret = pointer to CAN control block for this CAN unit
@@ -98,6 +164,9 @@ struct CAN_CTLBLOCK* can_iface_init(CAN_HandleTypeDef *phcan, uint32_t numtx)
 
 	struct CAN_POOLBLOCK* plst;
 	struct CAN_POOLBLOCK* ptmp;
+
+	struct CANRCVBUFN* pcann;
+
 taskENTER_CRITICAL();
 	/* Get a control block for this CAN module. */
 	pctl = (struct CAN_CTLBLOCK*)calloc(1, sizeof(struct CAN_CTLBLOCK));
@@ -144,7 +213,21 @@ taskENTER_CRITICAL();
 	{
 		plst->plinknext = ptmp;
 		plst = ptmp++;
-	} 
+	}
+
+	/* Setup circular buffer for receive CAN msgs */
+	if (numrx == 0)  {pctl->ret = -3; return pctl;} // Bogus rx buffering count
+	pcann = (struct CAN_POOLBLOCK*)calloc(numrx, sizeof(struct CANRCVBUFN));
+	if (pcann == NULL){pctl->ret = -4; taskEXIT_CRITICAL(); return NULL;} // Get buff failed
+
+	/* Initialize pointers for "add"ing CAN msgs to the circular buffer */
+	pctl->pcir->pbegin = pcann;
+	pctl->pcir->pwork  = pcann;
+	pctl->pcir->pend   = pcann + numrx;
+
+	/* NOTE: pctl->tsknote gets initialized
+      when 'MailboxTask' calls 'can_iface_mbx_init' */
+
 taskEXIT_CRITICAL();
 	return pctl;	// Return pointer to control block
 }
@@ -160,9 +243,7 @@ taskEXIT_CRITICAL();
  *				: -2 = Bogus CAN id rejected
  ******************************************************************************/
 
-
 extern uint32_t debugTX1c;
-
 
 int can_driver_put(struct CAN_CTLBLOCK* pctl,struct CANRCVBUF *pcan,uint8_t maxretryct,uint8_t bits)
 {
@@ -354,7 +435,17 @@ volatile	struct CAN_POOLBLOCK* p = pctl->pend.plinknext;
 	ncan.pctl = pctl;
 	ncan.can = p->can;
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	xQueueSendToBackFromISR(CanRxQHandle,&ncan,&xHigherPriorityTaskWoken);
+			*pctl->pcir->pwork = ncan;
+			pctl->pcir->pwork++;
+			if (pctl->pcir->pwork == pctl->pcir->pend) pctl->pcir->pwork = pctl->pcir->pbegin;
+
+			if (pctl->pcir->tsknote.tskhandle != NULL)
+			{
+				xTaskNotifyFromISR(pctl->pcir->tsknote.tskhandle,\
+					pctl->pcir->tsknote.notebit, eSetBits,\
+					xHigherPriorityTaskWoken );
+			}
+
 #endif
 
 
@@ -427,8 +518,17 @@ debug1 += 1;
 			ncan.pctl = pctl;
 			canmsg_compress(&ncan.can, &header, &data[0]);
 
-			/* Place on queue for RX task to filter, distribute, notify, etc. */
-		   xQueueSendToBackFromISR(CanRxQHandle,&ncan,&xHigherPriorityTaskWoken);
+			/* Place on queue for Mailbox task to filter, distribute, notify, etc. */
+			*pctl->pcir->pwork = ncan;
+			pctl->pcir->pwork++;
+			if (pctl->pcir->pwork == pctl->pcir->pend) pctl->pcir->pwork = pctl->pcir->pbegin;
+
+			if (pctl->pcir->tsknote.tskhandle != NULL)
+			{
+				xTaskNotifyFromISR(pctl->pcir->tsknote.tskhandle,\
+					pctl->pcir->tsknote.notebit, eSetBits,\
+					xHigherPriorityTaskWoken );
+			}
 		}
 	} while (ret == HAL_OK); //JIC there is more than one in the hw fifo
 	portYIELD_FROM_ISR( xHigherPriorityTaskWoken ); // Trigger scheduler

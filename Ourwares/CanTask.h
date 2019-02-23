@@ -24,14 +24,6 @@ struct CANTXQMSG
 	uint8_t bits;
 };
 
-/* Received CAN msg plus CAN module identification */
-// This allows "someone" to associate the msg with the CAN module
-struct CANRCVBUFN
-{
-	struct CANRCVBUF can;	   // Our standard CAN msg
-	struct CAN_CTLBLOCK* pctl;	// Pointer to control block for this CAN
-	uint32_t dtw;              // DTW counter time of CAN msg arrival
-};
 
 /* *************************************************************************/
 QueueHandle_t  xCanTxTaskCreate(uint32_t taskpriority, int32_t queuesize);

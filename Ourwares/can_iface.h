@@ -24,6 +24,38 @@ at all times.
 #include "stm32f4xx_hal_can.h"
 #include "common_can.h"
 
+/* Received CAN msg plus CAN module identification */
+// This allows "someone" to associate the msg with the CAN module
+struct CANRCVBUFN
+{
+	struct CANRCVBUF can;	   // Our standard CAN msg
+	struct CAN_CTLBLOCK* pctl;	// Pointer to control block for this CAN
+	uint32_t dtw;              // DTW counter time of CAN msg arrival
+};
+
+struct CANRXNOTIFY
+{
+	osThreadId tskhandle; // Task (usually 'MailboxTask')
+	uint32_t notebit;     // Notification bit   
+
+};
+
+/* Circular buffer pointers for incoming CAN.  CAN module specific. */
+struct CANCIRBUFPTRS
+{
+	struct CANRCVBUFN* pbegin;
+	struct CANRCVBUFN* pend;
+	struct CANRCVBUFN* pwork;
+};
+
+/* Task pointers for taking CAN msgs from circular buffer. */
+struct CANTAKEPTR
+{
+	struct CANCIRBUFPTRS* pcir;
+	struct CANRCVBUFN* ptake;
+};
+
+
 // Disable TX RQCPx and RX0, and RX1 interrupts for CAN1 and CAN2 (works in an 'if' statement)
 //#define DISABLE_ALLCANINT  do{ __attribute__((__unused__)) int rdbk;CAN_IER(CAN1) &= ~0x13; CAN_IER(CAN2) &= ~0x13; rdbk = CAN_IER(CAN1); rdbk = CAN_IER(CAN2);}while(0) 
 // Enable the above interrupts
@@ -81,10 +113,16 @@ volatile struct CAN_POOLBLOCK* volatile pxprv;	// pxprv->plinknext points to msg
 
 	uint32_t abortflag;	// 1 = ABRQ0 bit in TSR was set.
 
+	/* Circular buffer for incoming CAN msgs */
+	struct CANCIRBUFPTRS* pcir; // Pointer to struct with circular buffer "add" pointers
+	struct CANRXNOTIFY tsknote; // Task Handle and notification bit for 'MailboxTask'
+
 	struct CANWINCHPODCOMMONERRORS can_errors;	// A group of error counts
 	uint32_t	bogusct;	// Count of bogus CAN IDs rejected
 	s8 	ret;		   // Return code from routine call
 };
+
+
 
 /******************************************************************************/
 struct CAN_CTLBLOCK* can_iface_init(CAN_HandleTypeDef *phcan, uint32_t numtx);
