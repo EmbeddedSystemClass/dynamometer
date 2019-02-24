@@ -55,11 +55,64 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
+#include "SerialTaskSend.h"
+#include "stm32f4xx_hal_pcd.h"
+#include "usbd_cdc_if.h"
+#include "cdc_txbuff.h"
+#include "CanTask.h"
+#include "can_iface.h"
+#include "canfilter_setup.h"
+#include "stm32f4xx_hal_can.h"
+#include "getserialbuf.h"
+#include "SerialTaskSend.h"
+#include "stackwatermark.h"
+#include "yprintf.h"
+#include "gateway_comm.h"
+#include "gateway_CANtoPC.h"
+#include "DTW_counter.h"
+#include "SerialTaskReceive.h"
+#include "yscanf.h"
+#include "adctask.h"
+#include "gateway_PCtoCAN.h"
+#include "morse.h"
+#include "MailboxTask.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+void* verr[8];
+uint32_t verrx = 0;
+__attribute__( ( always_inline ) ) __STATIC_INLINE uint32_t __get_SP(void) 
+{ 
+  register uint32_t result; 
+
+  __ASM volatile ("MOV %0, SP\n" : "=r" (result) ); 
+  return(result); 
+} 
+
+uint32_t timectr = 0;
+struct CAN_CTLBLOCK* pctl1;	// Pointer to CAN1 control block
+struct CAN_CTLBLOCK* pctl2;	// Pointer to CAN2 control block
+
+uint32_t debugTX1b;
+uint32_t debugTX1b_prev;
+
+uint32_t debugTX1c;
+uint32_t debugTX1c_prev;
+
+uint32_t debug03;
+uint32_t debug03_prev;
+
+extern osThreadId SerialTaskHandle;
+extern osThreadId CanTxTaskHandle;
+extern osThreadId CanRxTaskHandle;
+extern osThreadId SerialTaskReceiveHandle;
+
+uint8_t canflag;
+uint8_t canflag1;
+uint8_t canflag2;
 
 /* USER CODE END PTD */
 
@@ -118,7 +171,8 @@ void StartDefaultTask(void const * argument);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	BaseType_t ret;	   // Used for returns from function calls
+	osMessageQId Qidret; // Functin call return
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -146,7 +200,13 @@ int main(void)
   MX_CAN2_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-
+/*
+DiscoveryF4 LEDs --
+ GPIOD, GPIO_PIN_12 GREEN
+ GPIOD, GPIO_PIN_13 ORANGE
+ GPIOD, GPIO_PIN_14 RED
+ GPIOD, GPIO_PIN_15 BLUE
+*/
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -168,6 +228,79 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+/* =================================================== */
+	/* Create serial task (priority) */
+	// Task handle "osThreadId SerialTaskHandle" is global
+	xSerialTaskSendCreate(0);	// Create task and set Task priority
+
+	/* Add bcb circular buffer to SerialTaskSend for usart6 */
+	#define NUMCIRBCB6  16 // Size of circular buffer of BCB for usart6
+	ret = xSerialTaskSendAdd(&huart6, NUMCIRBCB6, 0); // char-by-char
+	if (ret < 0) morse_trap(1); // Panic LED flashing
+
+	/* Add bcb circular buffer to SerialTaskSend for usart2 */
+	#define NUMCIRBCB2  12 // Size of circular buffer of BCB for usart2
+	ret = xSerialTaskSendAdd(&huart2, NUMCIRBCB2, 1); // dma
+	if (ret < 0) morse_trap(2); // Panic LED flashing
+
+	/* Setup semaphore for yprint and sprintf et al. */
+	yprintf_init();
+
+	/* Create serial receiving task of uart6 (char-by-char) */
+	xSerialTaskReceiveCreate(0);
+
+  /* definition and creation of CanTxTask - CAN driver TX interface. */
+  Qidret = xCanTxTaskCreate(0, 32); // CanTask priority, Number of msgs in queue
+	if (Qidret < 0) morse_trap(5); // Panic LED flashing
+
+  /* definition and creation of CanRxTask - CAN driver RX interface. */
+  Qidret = xCanRxTaskCreate(1, 32); // CanTask priority, Number of msgs in queue
+	if (Qidret < 0) morse_trap(6); // Panic LED flashing
+
+	/* Setup TX linked list for CAN  */
+   // CAN1 (CAN_HandleTypeDef *phcan, uint8_t canidx, uint16_t numtx, uint16_t numrx);
+	pctl1 = can_iface_init(&hcan1, 1, 32, 64);
+	if (pctl1 == NULL) morse_trap(7); // Panic LED flashing
+
+	// CAN 2
+	pctl2 = can_iface_init(&hcan2, 2, 8, 16);
+	if (pctl2 == NULL) morse_trap(8); // Panic LED flashing
+
+	/* Setup CAN hardware filters to default to accept all ids. */
+	HAL_StatusTypeDef Cret;
+	Cret = canfilter_setup_first(1, &hcan1, 15); // CAN1
+	if (Cret == HAL_ERROR) morse_trap(9);
+
+//	Cret = canfilter_setup_first(2, &hcan2, 15); // CAN2
+//	if (Cret == HAL_ERROR) morse_trap(10);
+
+	/* Remove "accept all" CAN msgs and add specific id & mask, or id here. */
+	// See canfilter_setup.h
+
+	/* Create MailboxTask for each CAN module. */
+	struct MAILBOXCANNUM* pmbxret;
+	// (CAN1 control block pointer, size of circular buffer)
+	pmbxret = MailboxTask_add_CANlist(pctl1, 48);
+	if (pmbxret == NULL) morse_trap(16);
+
+	// (CAN2 control block pointer, size of circular buffer)
+	MailboxTask_add_CANlist(pctl1, 0); // Use default buff size
+	if (pmbxret == NULL) morse_trap(17);
+
+	/* Further initialization of mailboxes takes place when tasks start */
+
+	/* Select interrupts for CAN1 */
+	HAL_CAN_ActivateNotification(&hcan1, \
+		CAN_IT_TX_MAILBOX_EMPTY     |  \
+		CAN_IT_RX_FIFO0_MSG_PENDING |  \
+		CAN_IT_RX_FIFO1_MSG_PENDING    );
+
+	/* Start CANs */
+	HAL_CAN_Start(&hcan1); // CAN1
+//	HAL_CAN_Start(&hcan2); // CAN2
+
+/* =================================================== */
+
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
@@ -529,7 +662,7 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    osDelay(1024);
   }
   /* USER CODE END 5 */ 
 }

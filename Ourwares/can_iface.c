@@ -176,7 +176,7 @@ taskENTER_CRITICAL();
 	/* Add HAL CAN control block "handle" to our control block */
 	pctl->phcan = phcan; 
 
-	pctl_canidx = canidx;
+	pctl->canidx = canidx;
 
 	/* Add new control block to list of control blocks */
 	if (ppctllist != NULL) // Not first time?

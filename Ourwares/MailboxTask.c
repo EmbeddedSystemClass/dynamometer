@@ -10,6 +10,7 @@
 #include "MailboxTask.h"
 #include "morse.h"
 #include "DTW_counter.h"
+#include "payload_extract.h"
 
 
 #define STM32MAXCANNUM 3	// So far STM32 only has 3 CAN modules
@@ -17,6 +18,7 @@
 
 struct MAILBOXCANNUM
 {
+	struct CAN_CTLBLOCK* pctl;     // CAN control block pointer associated with this mailbox list
 	struct MAILBOXCAN** pmbxarray; // Point to sorted mailbox pointer array[0]
 	struct CANTAKEPTR* ptake;      // "Take" pointer for can_iface circular buffer
 	uint32_t notebit;              // Notification bit for this CAN module circular buffer
@@ -52,6 +54,9 @@ struct MAILBOXCANNUM* MailboxTask_add_CANlist(struct CAN_CTLBLOCK* pctl, uint16_
 	/* Max number of mailboxes for this CAN module */
 	mbxcannum[pctl->canidx].arraysizemax = arraysize;
 
+	/* This needed to find the CAN module in 'StartMailboxTask' */
+	mbxcannum[pctl->canidx].pctl = pctl;
+
 taskENTER_CRITICAL();
 
 	/* Get memory for the array of mailbox pointers */
@@ -60,7 +65,7 @@ taskENTER_CRITICAL();
 
 	/* Get a circular buffer 'take' pointer for this CAN module. */
 	// The first three notification bits are reserved for CAN modules 
-	mbxcannum[pctl->canidx].ptake = can_iface_add_take(pctl, NULL, (1 << canidx) );
+	mbxcannum[pctl->canidx].ptake = can_iface_mbx_init(pctl, NULL, (1 << pctl->canidx) );
 
 taskEXIT_CRITICAL();
 
@@ -72,7 +77,7 @@ taskEXIT_CRITICAL();
 	mbxcannum[pctl->canidx].arraysizecur = 0; // Number created
 
 	/* Most important here, is to return a non-NULL pointer. */
-	return &mbxcannum[canidx];
+	return &mbxcannum[pctl->canidx];
 }
 
 /* *************************************************************************
@@ -97,7 +102,7 @@ struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl, uint32_t canid, ui
 	if (pctl  == NULL) return NULL;
 
 	/* Pointer to beginning of array of mailbox pointers. */
-	ppmbx = mbxcannum[pctl->canidx]->pmbxarray;
+	ppmbx = mbxcannum[pctl->canidx].pmbxarray;
 
 taskENTER_CRITICAL();
 
@@ -106,7 +111,7 @@ taskENTER_CRITICAL();
 	for (j = 0; j < mbxcannum[pctl->canidx].arraysizecur; j++)
 	{
 		pmbx = *(ppmbx+j);  // Get pointer to a mailbox from array of pointers
-		if (pmbx == NULL) morse_trap(9); // jic|debug
+		if (pmbx == NULL) morse_trap(20); // jic|debug
 		if (pmbx->ncan.can.id == canid)
 		{ // Here, CAN id already has a mailbox, so a notification must be wanted by this task
 			if (notebit != 0)
@@ -120,7 +125,7 @@ taskENTER_CRITICAL();
 				if (pmbx->pnote == NULL)
 				{ // This is the first notification for this mailbox.
 					pmbx->pnote = pnotex;   // Mailbox points to first notification
-					pnotex->pnext = pontex;	// Last on list points to self
+					pnotex->pnext = pnotex;	// Last on list points to self
 					pnotex->tskhandle = xTaskGetCurrentTaskHandle();
 					pnotex->notebit = notebit;
 					taskEXIT_CRITICAL();
@@ -134,7 +139,7 @@ taskENTER_CRITICAL();
 
 					/* Add to list and initialize. */
 					pnotetmp->pnext = pnotex; // End block now points to new block
-					pnotex->pnext = pontex;	  // New block points to self
+					pnotex->pnext   = pnotex; // New block points to self
 					pnotex->tskhandle = xTaskGetCurrentTaskHandle();
 					pnotex->notebit = notebit;
 					taskEXIT_CRITICAL();
@@ -159,17 +164,17 @@ taskENTER_CRITICAL();
 	if (pmbx == NULL){ taskEXIT_CRITICAL();return NULL;}
 
 	pmbx->ctr   = 0;       // Redundant (calloc set it zero)
-	pbmx->pnote = NULL;    // Redundant (calloc set it zero)
+	pmbx->pnote = NULL;    // Redundant (calloc set it zero)
 	pmbx->ncan. can.id = canid;   // Save CAN id
-	pbmx->ncan.dtw     = DTWTIME; // Set current time count
+	pmbx->ncan.dtw     = DTWTIME; // Set current time count
 
 	if (notebit != 0)
 	{ // Here, a notification is requested.  Add first instance of notification  
 		pnotex = (struct CANNOTIFYLIST*)calloc(1, sizeof(struct CANNOTIFYLIST));
 		if (pnotex == NULL){ taskEXIT_CRITICAL();return NULL;}
 
-		pmbx->pnote = pnotex;   // Mailbox points to first notification
-		pnotex->pnext = pontex;	// Last on list points to self
+		pmbx->pnote   = pnotex; // Mailbox points to first notification
+		pnotex->pnext = pnotex;	// Last on list points to self
 		pnotex->tskhandle = xTaskGetCurrentTaskHandle();
 		pnotex->notebit = notebit;
 	}
@@ -199,6 +204,7 @@ osThreadId xMailboxTaskCreate(uint32_t taskpriority)
  * *************************************************************************/
 void StartMailboxTask(void const * argument)
 {
+	int i;
 	struct MAILBOXCANNUM* pmbxnum;
 	struct CANRCVBUFN* pncan;
 	struct CANTAKEPTR* ptake[STM32MAXCANNUM];
@@ -208,8 +214,8 @@ void StartMailboxTask(void const * argument)
 	{
 		if (mbxcannum[i].pmbxarray != NULL)
 		{
-					ptake[i] = can_iface_mbx_init(pctl, NULL, (1 << i));
-					if (ptake[i] == NULL) morse_trap[10];
+					ptake[i] = can_iface_mbx_init(mbxcannum[i].pctl, NULL, (1 << i));
+					if (ptake[i] == NULL) morse_trap(22);
 		}
 	}
 
@@ -233,7 +239,7 @@ void StartMailboxTask(void const * argument)
 			if ((noteval & (1 << i)) != 0)
 			{	
 				noteused |= (1 << i);
-				pmbxnum = mbxcannum[i]; // Pt to CAN module mailbox control block
+				pmbxnum = &mbxcannum[i]; // Pt to CAN module mailbox control block
 				do
 				{
 					/* Get a pointer to the circular buffer w CAN msgs. */
@@ -257,9 +263,10 @@ void StartMailboxTask(void const * argument)
 static struct MAILBOXCAN* lookup(struct MAILBOXCANNUM* pmbxnum, struct CANRCVBUFN* pncan)
 {
 	struct MAILBOXCAN** ppmbx;
+	struct MAILBOXCAN*   pmbx;
 	int i;
 
-	ppmbx = *pmbxnum->pmbxarray;
+	ppmbx = pmbxnum->pmbxarray;
 	for (i = 0; i < pmbxnum->arraysizecur; i++)
 	{
 		pmbx = *(ppmbx + i); // Point to mailbox[i]
@@ -290,7 +297,7 @@ static struct MAILBOXCAN* loadmbx(struct MAILBOXCANNUM* pmbxnum, struct CANRCVBU
 
 	/* Here, this CAN msg has a mailbox. */
 	// Extract payload
-	payload_extract((pmbx, pncan);
+	payload_extract(pmbx, pncan);
 
 	/* Execute notifications */
 	pnotex = pmbx->pnote;
@@ -302,7 +309,7 @@ static struct MAILBOXCAN* loadmbx(struct MAILBOXCANNUM* pmbxnum, struct CANRCVBU
 	{
 		xTaskNotifyFromISR(pnotetmp->tskhandle,\
 		pnotetmp->notebit, eSetBits,\
-		xHigherPriorityTaskWoken );
+		&xHigherPriorityTaskWoken );
 
 		pnotetmp = pnotex->pnext;
 		pnotex = pnotex->pnext;

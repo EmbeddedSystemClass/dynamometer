@@ -58,6 +58,33 @@ struct MAILBOXCAN
 	uint8_t paytype;             // Code for payload type
 };
 
+/* *************************************************************************/
+struct MAILBOXCANNUM* MailboxTask_add_CANlist(struct CAN_CTLBLOCK* pctl, uint16_t arraysize);
+/*	@brief	: Add CAN module mailbox list
+ * @param	: pctl = Pointer to CAN control block
+ * @param	: arraysize = max number of mailboxes in sorted list
+ * @return	: Pointer which probably will not be used; NULL = failed (more important)
+ * NOTE: This is normally called in 'main' before the FreeRTOS scheduler starts.
+ * *************************************************************************/
+struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl, uint32_t canid, uint32_t notebit, uint8_t paytype);
+/*	@brief	: Add a mailbox
+ * @param	: pctl = Pointer to CAN control block, i.e. CAN module/CAN bus, for mailbox
+ * @param	: canid = CAN ID
+ * @param	: notebit = notification bit; NULL = no notification if tskhandle = NULL
+ * @param	: paytype = payload type code (see 'PAYLOAD_TYPE_INSERT.sql' in 'GliderWinchCommons/embed/svn_common/db')
+ * @return	: Pointer to mailbox; NULL = failed
+ * NOTE: This is normally called from tasks that have started, but are not in the endless loop
+ * *************************************************************************/
+osThreadId xMailboxTaskCreate(uint32_t taskpriority);
+/* @brief	: Create task; task handle created is global for all to enjoy!
+ * @param	: taskpriority = Task priority (just as it says!)
+ * @return	: QueueHandle_t = queue handle
+ * *************************************************************************/
+void StartMailboxTask(void const * argument);
+/*	@brief	: Task startup
+ * *************************************************************************/
+
+
 extern osThreadId MailboxTaskHandle;
 
 #endif
