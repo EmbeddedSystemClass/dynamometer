@@ -65,7 +65,6 @@
 #include "canfilter_setup.h"
 #include "stm32f4xx_hal_can.h"
 #include "getserialbuf.h"
-#include "SerialTaskSend.h"
 #include "stackwatermark.h"
 #include "yprintf.h"
 #include "gateway_comm.h"
@@ -223,7 +222,7 @@ DiscoveryF4 LEDs --
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 512);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -249,13 +248,24 @@ DiscoveryF4 LEDs --
 	/* Create serial receiving task of uart6 (char-by-char) */
 	xSerialTaskReceiveCreate(0);
 
+	/* USB-CDC buffering */
+	#define NUMCDCBUFF 3	// Number of CDC task local buffers
+	#define CDCBUFFSIZE 64*16	// Best buff size is multiples of usb packet size
+	struct CDCBUFFPTR* pret;
+	pret = cdc_txbuff_init(NUMCDCBUFF, CDCBUFFSIZE); // Setup local buffers
+	if (pret == NULL) morse_trap(3);
+	
+	/* USB-CDC queue and task creation */
+	Qidret = xCdcTxTaskSendCreate(3);
+	if (Qidret < 0) morse_trap(4); // Maybe add panic led flashing here
+
   /* definition and creation of CanTxTask - CAN driver TX interface. */
   Qidret = xCanTxTaskCreate(0, 32); // CanTask priority, Number of msgs in queue
 	if (Qidret < 0) morse_trap(5); // Panic LED flashing
 
   /* definition and creation of CanRxTask - CAN driver RX interface. */
-  Qidret = xCanRxTaskCreate(1, 32); // CanTask priority, Number of msgs in queue
-	if (Qidret < 0) morse_trap(6); // Panic LED flashing
+//  Qidret = xCanRxTaskCreate(1, 32); // CanTask priority, Number of msgs in queue
+//	if (Qidret < 0) morse_trap(6); // Panic LED flashing
 
 	/* Setup TX linked list for CAN  */
    // CAN1 (CAN_HandleTypeDef *phcan, uint8_t canidx, uint16_t numtx, uint16_t numrx);
@@ -280,12 +290,12 @@ DiscoveryF4 LEDs --
 	/* Create MailboxTask for each CAN module. */
 	struct MAILBOXCANNUM* pmbxret;
 	// (CAN1 control block pointer, size of circular buffer)
-	pmbxret = MailboxTask_add_CANlist(pctl1, 48);
-	if (pmbxret == NULL) morse_trap(16);
+//$	pmbxret = MailboxTask_add_CANlist(pctl1, 48);
+//$	if (pmbxret == NULL) morse_trap(16);
 
 	// (CAN2 control block pointer, size of circular buffer)
-	MailboxTask_add_CANlist(pctl1, 0); // Use default buff size
-	if (pmbxret == NULL) morse_trap(17);
+//	MailboxTask_add_CANlist(pctl1, 0); // Use default buff size
+//	if (pmbxret == NULL) morse_trap(17);
 
 	/* Further initialization of mailboxes takes place when tasks start */
 
@@ -298,13 +308,13 @@ DiscoveryF4 LEDs --
 	/* Start CANs */
 	HAL_CAN_Start(&hcan1); // CAN1
 //	HAL_CAN_Start(&hcan2); // CAN2
-
 /* =================================================== */
 
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+
   /* USER CODE END RTOS_QUEUES */
  
 
@@ -659,12 +669,60 @@ void StartDefaultTask(void const * argument)
   MX_USB_DEVICE_Init();
 
   /* USER CODE BEGIN 5 */
+	struct SERIALSENDTASKBCB* pbuf1 = getserialbuf(&huart6,96);
+	if (pbuf1 == NULL) morse_trap(11);
+
+	struct SERIALSENDTASKBCB* pbuf2 = getserialbuf(&huart6,96);
+	if (pbuf1 == NULL) morse_trap(12);
+
+	int ctr = 0; // Running count
+	uint32_t heapsize;
+
+	/* Test CAN msg */
+	struct CANTXQMSG testtx;
+	testtx.pctl = pctl1;
+	testtx.can.id = 0xc2200000;
+	testtx.can.dlc = 8;
+	testtx.can.cd.uc[0] = 0x01;
+	int i;
+	for (i = 1; i< 8; i++)
+	{
+		testtx.can.cd.uc[i] = testtx.can.cd.uc[i-1] + 0x20 + i;
+	}
+
+	testtx.maxretryct = 8;
+	testtx.bits = 0;
+
+HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
+
   /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1024);
-  }
-  /* USER CODE END 5 */ 
+#define LOOPDELAYTICKS (64*8*2)	// 1 sec Loop delay (512 Hz tick rate)
+	for ( ;; )
+	{
+		osDelay(LOOPDELAYTICKS);
+		ctr += 1;
+
+		HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
+//#define DEBUG22
+#ifdef DEBUG22
+		/* Display the amount of unused stack space for tasks. */
+		stackwatermark_show(defaultTaskHandle,&pbuf2,"defaultTask--");
+		stackwatermark_show(SerialTaskHandle ,&pbuf2,"SerialTask---");
+		stackwatermark_show(CanTxTaskHandle  ,&pbuf2,"CanTxTask----");
+		stackwatermark_show(CanRxTaskHandle  ,&pbuf2,"CanRxTask----");
+		stackwatermark_show(MailboxTaskHandle,&pbuf2,"MailboxTask--");
+		stackwatermark_show(SerialTaskReceiveHandle  ,&pbuf2,"SerialRcvTask");
+#endif
+		/* Heap usage */
+//		heapsize = xPortGetFreeHeapSize();
+//		yprintf(&pbuf2,"\n\rGetFreeHeapSize: %i used: %i",heapsize,(configTOTAL_HEAP_SIZE-heapsize));
+yprintf(&pbuf2,"\n\rdefaultTask reporting");
+		/* ==== CAN MSG sending test ===== */
+		/* Place test CAN msg to send on queue in a burst. */
+		/* Note: an odd makes the LED flash since it toggles on each msg. */
+//		for (i = 0; i < 7; i++)
+//			xQueueSendToBack(CanTxQHandle,&testtx,portMAX_DELAY);
+	}
 }
 
 /**

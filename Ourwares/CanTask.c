@@ -51,7 +51,7 @@ void canmsg_expand(CAN_TxHeaderTypeDef *phal, uint8_t *pdat, struct CANRCVBUF *p
 QueueHandle_t  xCanTxTaskCreate(uint32_t taskpriority, int32_t queuesize)
 {
  /* definition and creation of CanTask */
-  osThreadDef(CanTxTask, StartCanTxTask, osPriorityNormal, 0, 128);
+  osThreadDef(CanTxTask, StartCanTxTask, osPriorityNormal, 0, 256);
   CanTxTaskHandle = osThreadCreate(osThread(CanTxTask), NULL);
 	vTaskPrioritySet( CanTxTaskHandle, taskpriority );
 
@@ -68,19 +68,17 @@ void StartCanTxTask(void const * argument)
    BaseType_t Qret;	// queue receive return
 	struct CANTXQMSG txq;
 
+//osDelay(512*4); // Debug delay
+
   /* Infinite RTOS Task loop */
   for(;;)
   {
 HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13); // ORANGE
-		do
-		{/* Wait indefinitely for someone to load something into the queue      */
-		 /* Skip over empty returns, and NULL pointers that would cause trouble */
-			Qret = xQueueReceive(CanTxQHandle,&txq,portMAX_DELAY);
-			if (Qret == pdPASS) // Break loop if not empty
-				break;
-		} while (txq.pctl == NULL);
-		/* Send CAN msg to CAN unit. */
-		can_driver_put(txq.pctl, &txq.can, txq.maxretryct, txq.bits);
+		Qret = xQueueReceive(CanTxQHandle,&txq,portMAX_DELAY);
+		if (Qret == pdPASS) // Break loop if not empty
+		{
+			can_driver_put(txq.pctl, &txq.can, txq.maxretryct, txq.bits);
+		}
   }
 }
 /* ====== Rx ==============================================================*/

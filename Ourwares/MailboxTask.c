@@ -209,6 +209,8 @@ void StartMailboxTask(void const * argument)
 	struct CANRCVBUFN* pncan;
 	struct CANTAKEPTR* ptake[STM32MAXCANNUM];
 
+while(1==1) osDelay(10);
+
 	/* Get circular buffer pointers for each CAN module in list. */	
 	for (i = 0; i < STM32MAXCANNUM; i++)
 	{

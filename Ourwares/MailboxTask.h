@@ -84,7 +84,6 @@ void StartMailboxTask(void const * argument);
 /*	@brief	: Task startup
  * *************************************************************************/
 
-
 extern osThreadId MailboxTaskHandle;
 
 #endif
