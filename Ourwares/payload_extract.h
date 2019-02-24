@@ -7,14 +7,15 @@
 #ifndef __PAYLOADEXTRACT
 #define __PAYLOADEXTRACT
 
-#include "stm32f4xx_hal_def.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "cmsis_os.h"
-#include "malloc.h"
-#include "common_can.h"
 #include "can_iface.h"
+#include "MailboxTask.h"
 
+/* *************************************************************************/
+void payload_extract(struct MAILBOXCAN* pmbx, struct CANRCVBUFN* pncan);
+/*	@brief	: Lookup CAN ID and load mailbox with extract payload reading(s)
+ * @param	: pmbx  = pointer to mailbox
+ * @param	: pncan = pointer to CAN msg in can_face.c circular buffer
+ * *************************************************************************/
 
 #endif
 

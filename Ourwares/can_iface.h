@@ -23,6 +23,9 @@ at all times.
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_can.h"
 #include "common_can.h"
+#include "CanTask.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* Received CAN msg plus CAN module identification */
 // This allows "someone" to associate the msg with the CAN module
@@ -120,15 +123,17 @@ volatile struct CAN_POOLBLOCK* volatile pxprv;	// pxprv->plinknext points to msg
 	struct CANWINCHPODCOMMONERRORS can_errors;	// A group of error counts
 	uint32_t	bogusct;	// Count of bogus CAN IDs rejected
 	s8 	ret;		   // Return code from routine call
+
+	uint8_t canidx;
 };
 
-
-
 /******************************************************************************/
-struct CAN_CTLBLOCK* can_iface_init(CAN_HandleTypeDef *phcan, uint32_t numtx);
+struct CAN_CTLBLOCK* can_iface_init(CAN_HandleTypeDef *phcan, uint8_t canidx, uint16_t numtx, uint16_t numrx);
 /* @brief 	: Setup linked list for TX priority sorted buffering
  * @param	: phcan = Pointer "handle" to HAL control block for CAN module
+ * @param	: cannum = CAN module index, CAN1 = 0, CAN2 = 1, CAN3 = 2
  * @param	: numtx = number of CAN msgs for TX buffering
+ * @param	: numrx = number of incoming (and loopback) CAN msgs in circular buffer
  * @return	: Pointer to our knows-all control block for this CAN
  *		:  NULL = calloc failed
  *		:  Pointer->ret = pointer to CAN control block for this CAN unit
@@ -143,6 +148,22 @@ int can_driver_put(struct CAN_CTLBLOCK* pctl, struct CANRCVBUF *pcan, u8 maxretr
  *				: -1 = Buffer overrun (no free slots for the new msg)
  *				: -2 = Bogus CAN id rejected
  ******************************************************************************/
+struct CANTAKEPTR* can_iface_add_take(struct CAN_CTLBLOCK*  pctl);
+/* @brief 	: Get a 'take' pointer for accessing CAN msgs in the circular buffer
+ * @param	: pctl = pointer to our CAN control block
+ * @return	: pointer to pointer pointing to 'take' location in circular CAN buffer
+*******************************************************************************/
+struct CANTAKEPTR* can_iface_mbx_init(struct CAN_CTLBLOCK*  pctl, osThreadId tskhandle, uint32_t notebit);
+/* @brief 	: Initialize the mailbox task notification and get a 'take pointer for it.
+ * @param	: tskhandle = task handle that will be used for notification; NULL = use current task
+ * @param	: notebit = notification bit if notifications used
+ * @return	: pointer to pointer pointing to 'take' location in circular CAN buffer 
+*******************************************************************************/
+struct CANRCVBUFN* can_iface_get_CANmsg(struct CANTAKEPTR* p);
+/* @brief 	: Get a pointer to the next available CAN msg and step ahead in the circular buffer
+ * @brief	: p = pointer to struct with 'take' and 'add' pointers
+ * @return	: pointer to CAN msg struct; NULL = no msgs available.
+*******************************************************************************/
 
 #endif 
 

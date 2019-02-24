@@ -8,28 +8,29 @@
 #include "stm32f4xx_hal_can.h"
 #include "CanTask.h"
 #include "MailboxTask.h"
+#include "morse.h"
+#include "DTW_counter.h"
 
-void StartMailboxTask(void const * argument);
-static struct MAILBOXCAN* loadmbx(struct MAILBOXCANNUM* pmbxnum, struct CANRCVBUFN* pncan);
 
 #define STM32MAXCANNUM 3	// So far STM32 only has 3 CAN modules
 #define MBXARRAYSIZE	32	// Default array size of mailbox pointer array
 
 struct MAILBOXCANNUM
 {
-	struct CAN_CTLBLOCK* pctl;     // Identifies CAN module via control block pointer
 	struct MAILBOXCAN** pmbxarray; // Point to sorted mailbox pointer array[0]
 	struct CANTAKEPTR* ptake;      // "Take" pointer for can_iface circular buffer
 	uint32_t notebit;              // Notification bit for this CAN module circular buffer
 	uint16_t arraysizemax;         // Mailbox pointer array size that was calloc'd  
 	uint16_t arraysizecur;         // Mailbox pointer array populated count
-	uint8_t cannum;                // 0 = CAN1, 1 = CAN2, 2 = CAN3, ...
 };
 
 /* One struct for each CAN module, e.g. CAN 1, 2, 3, ... */
 static struct MAILBOXCANNUM mbxcannum[STM32MAXCANNUM] = {0};
 
 osThreadId MailboxTaskHandle; // This wonderful task handle
+
+void StartMailboxTask(void const * argument);
+static struct MAILBOXCAN* loadmbx(struct MAILBOXCANNUM* pmbxnum, struct CANRCVBUFN* pncan);
 
 /* *************************************************************************
  * struct MAILBOXCANNUM* MailboxTask_add_CANlist(struct CAN_CTLBLOCK* pctl, uint16_t arraysize);
@@ -41,34 +42,15 @@ osThreadId MailboxTaskHandle; // This wonderful task handle
  * *************************************************************************/
 struct MAILBOXCANNUM* MailboxTask_add_CANlist(struct CAN_CTLBLOCK* pctl, uint16_t arraysize)
 {
-	int cannum = -1; 
-
 	struct MAILBOXCAN** ppmbxarray; // Pointer to array of pointers to mailboxes
 
-	if (mbxcannumidx >= STM32MAXCANNUM) return NULL; // We are full!
-
 	if (pctl == NULL) return NULL; // Oops
-	if (pctl->phcan.Instance == CAN1) cannum = 0;
-	if (pctl->phcan.Instance == CAN2) cannum = 1;
-	if (cannum < 0) return NULL;
 
 	if (arraysize == 0)
 		arraysize = MBXARRAYSIZE;	// Use default size
 
-	/* Check if any mailbox for this CAN module (pctl) exists? */
-	for (i = 0; i < mbxcannumidx; i++)
-	{
-		if (mbxcannum[i].pctl == pctl)
-		  return NULL; // Here, duplicate!  Only one to a customer.
-	}
-	/* Return of all positions filled and no matching pctl */
-	if (i == STM32MAXCANNUM) ;return NULL; // Here, likely a bogus pctl
-
-	/* Save CAN control block pointer, module */
-	mbxcannum[mbxcannumidx].pctl = pctl;
-
 	/* Max number of mailboxes for this CAN module */
-	mbxcannum[mbxcannumidx].arraysizemax = arraysize;
+	mbxcannum[pctl->canidx].arraysizemax = arraysize;
 
 taskENTER_CRITICAL();
 
@@ -77,22 +59,20 @@ taskENTER_CRITICAL();
 	if (ppmbxarray == NULL){ taskEXIT_CRITICAL();return NULL;}
 
 	/* Get a circular buffer 'take' pointer for this CAN module. */
-	mbxcannum[mbxcannumidx].ptake = can_iface_add_take(pctl, NULL, (1 << cannum) );
+	// The first three notification bits are reserved for CAN modules 
+	mbxcannum[pctl->canidx].ptake = can_iface_add_take(pctl, NULL, (1 << canidx) );
 
 taskEXIT_CRITICAL();
 
 	/* Save pointer to array of pointers to mailboxes. */
-	mbxcannum[mbxcannumidx].pmbxarray = ppmbxarray;
+	mbxcannum[pctl->canidx].pmbxarray = ppmbxarray;
 
 	/* Save number of mailbox pointers */
-	mbxcannum[mbxcannumidx].arraysizemax = arraysize; // Max
-	mbxcannum[mbxcannumidx].arraysizecur = 0; // Number created
-
-	/* Number of CAN modules index */
-	mbxcannumidx += 1; // Next available
+	mbxcannum[pctl->canidx].arraysizemax = arraysize; // Max
+	mbxcannum[pctl->canidx].arraysizecur = 0; // Number created
 
 	/* Most important here, is to return a non-NULL pointer. */
-	return &mbxcannum[mbxcannumidx-1];
+	return &mbxcannum[canidx];
 }
 
 /* *************************************************************************
@@ -107,7 +87,7 @@ taskEXIT_CRITICAL();
  * *************************************************************************/
 struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl, uint32_t canid, uint32_t notebit, uint8_t paytype)
 {
-	int i,j;
+	int j;
 	struct MAILBOXCAN* pmbx;
 	struct CANNOTIFYLIST* pnotex;
 	struct CANNOTIFYLIST* pnotetmp;
@@ -116,30 +96,23 @@ struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl, uint32_t canid, ui
 	if (canid == 0)    return NULL;
 	if (pctl  == NULL) return NULL;
 
+	/* Pointer to beginning of array of mailbox pointers. */
+	ppmbx = mbxcannum[pctl->canidx]->pmbxarray;
+
 taskENTER_CRITICAL();
-	/* Check if any mailbox for this CAN module (pctl) exists? */
-	for (i = 0; i < mbxcannumidx; i++) // Step through list of CAN modules
-	{
-		if (mbxcannum[i].pctl == pctl)
-		  break; // Here, a match.
-	}
-	/* Return if all CAN module positions filled and no matching 'pctl'.
-      There should have been a call to 'MailboxTask_add_CANlist' to setup
-      the pointer array before adding a mailbox. */
-	if (i == STM32MAXCANNUM) { taskEXIT_CRITICAL();return NULL;}
 
 	/* We are working with the array of pointers to mailboxes. */
 	// Check if this 'canid' has a mailbox
-	for (j = 0; j < mbxcannum[i].arraysizecur; j++)
+	for (j = 0; j < mbxcannum[pctl->canidx].arraysizecur; j++)
 	{
 		pmbx = *(ppmbx+j);  // Get pointer to a mailbox from array of pointers
-		if (pmbx == NULL) (morse_trap(9); // JIC/debug
-		if (pmbx->ncan.canid == canid)
+		if (pmbx == NULL) morse_trap(9); // jic|debug
+		if (pmbx->ncan.can.id == canid)
 		{ // Here, CAN id already has a mailbox, so a notification must be wanted by this task
 			if (notebit != 0)
 			{ // Here add a notification to the existing mailbox
 
-				/* Get notification block. */
+				/* Get a notification block. */
 				pnotex = (struct CANNOTIFYLIST*)calloc(1, sizeof(struct CANNOTIFYLIST));
 				if (pnotex == NULL){ taskEXIT_CRITICAL();return NULL;}
 
@@ -149,13 +122,12 @@ taskENTER_CRITICAL();
 					pmbx->pnote = pnotex;   // Mailbox points to first notification
 					pnotex->pnext = pontex;	// Last on list points to self
 					pnotex->tskhandle = xTaskGetCurrentTaskHandle();
-					pnotex->notebig = notebit;
+					pnotex->notebit = notebit;
 					taskEXIT_CRITICAL();
 					return pmbx;
 				}
 				else
 				{ // Here, one of more notifications.  Add to list.
-					
 					/* Seach end of list */
 					pnotetmp = pmbx->pnote;
 					while (pnotetmp != pnotetmp->pnext) pnotetmp = pnotetmp->pnext;
@@ -164,7 +136,7 @@ taskENTER_CRITICAL();
 					pnotetmp->pnext = pnotex; // End block now points to new block
 					pnotex->pnext = pontex;	  // New block points to self
 					pnotex->tskhandle = xTaskGetCurrentTaskHandle();
-					pnotex->notebig = notebit;
+					pnotex->notebit = notebit;
 					taskEXIT_CRITICAL();
 					return pmbx;
 				}
@@ -180,17 +152,16 @@ taskENTER_CRITICAL();
 	/* Create a mailbox for this canid                        */
 
 	// Point to next available location in array of mailbox pointers. */
-	ppmbx = mbxcannum[i].pmbxarray + mbxcannum[i].arraysizecur;
+	ppmbx = mbxcannum[pctl->canidx].pmbxarray + mbxcannum[pctl->canidx].arraysizecur;
 
-	/* Create a mailbox */
+	/* Create one mailbox */
 	pmbx = (struct MAILBOXCAN*)calloc(1, sizeof(struct MAILBOXCAN));
 	if (pmbx == NULL){ taskEXIT_CRITICAL();return NULL;}
 
-	pmbx->pctl  = pctl;    // Identification for CAN module
 	pmbx->ctr   = 0;       // Redundant (calloc set it zero)
 	pbmx->pnote = NULL;    // Redundant (calloc set it zero)
-	pmbx->ncan. canid = canid;   // Save CAN id
-	pbmx->ncan.dtw    = DTWTIME; // Set current time count
+	pmbx->ncan. can.id = canid;   // Save CAN id
+	pbmx->ncan.dtw     = DTWTIME; // Set current time count
 
 	if (notebit != 0)
 	{ // Here, a notification is requested.  Add first instance of notification  
@@ -200,7 +171,7 @@ taskENTER_CRITICAL();
 		pmbx->pnote = pnotex;   // Mailbox points to first notification
 		pnotex->pnext = pontex;	// Last on list points to self
 		pnotex->tskhandle = xTaskGetCurrentTaskHandle();
-		pnotex->notebig = notebit;
+		pnotex->notebit = notebit;
 	}
 // TODO: New mailbox w CAN ID so sort pointer array by CAN id here.
 
@@ -230,6 +201,17 @@ void StartMailboxTask(void const * argument)
 {
 	struct MAILBOXCANNUM* pmbxnum;
 	struct CANRCVBUFN* pncan;
+	struct CANTAKEPTR* ptake[STM32MAXCANNUM];
+
+	/* Get circular buffer pointers for each CAN module in list. */	
+	for (i = 0; i < STM32MAXCANNUM; i++)
+	{
+		if (mbxcannum[i].pmbxarray != NULL)
+		{
+					ptake[i] = can_iface_mbx_init(pctl, NULL, (1 << i));
+					if (ptake[i] == NULL) morse_trap[10];
+		}
+	}
 
 	/* A notification copies the internal notification word to this. */
 	uint32_t noteval = 0;    // Receives notification word upon an API notify
@@ -240,29 +222,29 @@ void StartMailboxTask(void const * argument)
   /* Infinite RTOS Task loop */
   for(;;)
   {
+		/* Wait for a CAN module to load its circular buffer. */
+		/* The notification bit identifies the CAN module. */
 		xTaskNotifyWait(noteused, 0, &noteval, portMAX_DELAY);
 		noteused = 0;	// Accumulate bits in 'noteval' processed.
 
-		if ((noteval & MBXNOTEBITCAN1) != 0)
+		/* Step through possible notification bits */
+		for (i = 0; i < STM32MAXCANNUM; i++)
 		{
-			noteused |= MBXNOTEBITCAN1; // We handled the bit
+			if ((noteval & (1 << i)) != 0)
+			{	
+				noteused |= (1 << i);
+				pmbxnum = mbxcannum[i]; // Pt to CAN module mailbox control block
+				do
+				{
+					/* Get a pointer to the circular buffer w CAN msgs. */
+					pncan = can_iface_get_CANmsg(pmbxnum->ptake);
 
-			/* The notification bit identifies the CAN module. */
-			pmbxnum = mbxcannum[0]; // Pt to CAN module mailbox control block
-			do
-			{
-				/* Get a pointer to the circular buffer w CAN msgs. */
-				pncan = can_iface_get_CANmsg(pmbxnum->ptake);
-
-				if (pncan != NULL)
-				{ // Load mailbox. of CANID is in list
-					loadmbx(pmbxnum, pncan);
-				}
-			} while (pncan != NULL);
-		}
-		if ((noteval & MBXNOTEBITCAN2) != 0)
-		{
-			noteused |= MBXNOTEBITCAN2; // We handled the bit
+					if (pncan != NULL)
+					{ // Load mailbox. of CANID is in list
+						loadmbx(pmbxnum, pncan);
+					}
+				} while (pncan != NULL);
+			}
 		}
   }
 }

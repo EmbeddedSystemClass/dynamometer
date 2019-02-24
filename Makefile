@@ -81,6 +81,32 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_can.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_adc_ex.c
 
+# /* USER CODE BEGIN */
+
+C_SOURCES += Ourwares/SerialTaskSend.c 
+C_SOURCES += Ourwares/cdc_txbuff.c
+C_SOURCES += Ourwares/DTW_counter.c
+C_SOURCES += Ourwares/CanTask.c
+C_SOURCES += Ourwares/can_iface.c
+C_SOURCES += Ourwares/canfilter_setup.c
+C_SOURCES += Ourwares/getserialbuf.c
+C_SOURCES += Ourwares/yprintf.c
+C_SOURCES += Ourwares/USB_PC_gateway.c
+C_SOURCES += Ourwares/PC_gateway_comm.c
+C_SOURCES += Ourwares/gateway_comm.c
+C_SOURCES += Ourwares/gateway_CANtoPC.c
+C_SOURCES += Ourwares/SerialTaskReceive.c
+C_SOURCES += Ourtasks/stackwatermark.c
+C_SOURCES += Ourtasks/yscanf.c
+C_SOURCES += Ourtasks/adctask.c
+C_SOURCES += Ourtasks/gateway_PCtoCAN.c
+C_SOURCES += Ourtasks/morse.c
+C_SOURCES += Ourtasks/payload_extract.c
+C_SOURCES += Ourtasks/MailboxTask.c
+
+# /* USER CODE END */ 
+
+
 # ASM sources
 ASM_SOURCES =  \
 startup_stm32f407xx.s
@@ -147,7 +173,14 @@ C_INCLUDES =  \
 -IMiddlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc \
 -IDrivers/CMSIS/Device/ST/STM32F4xx/Include \
 -IDrivers/CMSIS/Include
--IDrivers/CMSIS/Include
+
+# /* USER CODE BEGIN */
+
+C_INCLUDES += -IOurwares 
+C_INCLUDES += -IOurtasks
+
+# /* USER CODE END */ 
+
 
 
 # compile gcc flags
@@ -173,7 +206,7 @@ LDSCRIPT = STM32F407VGTx_FLASH.ld
 # libraries
 LIBS = -lc -lm -lnosys 
 LIBDIR = 
-LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections
+LDFLAGS = $(MCU) -u _printf_float -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections
 
 # default action: build all
 all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin

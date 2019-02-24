@@ -129,9 +129,4 @@ osDelay(11000);
   }
   return;
 }
-/* *************************************************************************
- * void CanTask_addmbx(osThreadId threadid, uint32_t notebit);
- *	@brief	: Add a CAN mailbox to a list
- * *************************************************************************/
-
 
