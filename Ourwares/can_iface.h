@@ -116,9 +116,9 @@ volatile struct CAN_POOLBLOCK* volatile pxprv;	// pxprv->plinknext points to msg
 
 	uint32_t abortflag;	// 1 = ABRQ0 bit in TSR was set.
 
-	/* Circular buffer for incoming CAN msgs */
-	struct CANCIRBUFPTRS* pcir; // Pointer to struct with circular buffer "add" pointers
-	struct CANRXNOTIFY tsknote; // Task Handle and notification bit for 'MailboxTask'
+	/* Circular buffer for incoming CAN msgs.  One per CAN module */
+	struct CANCIRBUFPTRS cirptrs; // struct with circular buffer "add" pointers
+	struct CANRXNOTIFY tsknote;   // Task Handle and notification bit for 'MailboxTask'
 
 	struct CANWINCHPODCOMMONERRORS can_errors;	// A group of error counts
 	uint32_t	bogusct;	// Count of bogus CAN IDs rejected
@@ -149,9 +149,10 @@ int can_driver_put(struct CAN_CTLBLOCK* pctl, struct CANRCVBUF *pcan, u8 maxretr
  *				: -2 = Bogus CAN id rejected
  ******************************************************************************/
 struct CANTAKEPTR* can_iface_add_take(struct CAN_CTLBLOCK*  pctl);
-/* @brief 	: Get a 'take' pointer for accessing CAN msgs in the circular buffer
+/* @brief 	: Create a 'take' pointer for accessing CAN msgs in the circular buffer
  * @param	: pctl = pointer to our CAN control block
  * @return	: pointer to pointer pointing to 'take' location in circular CAN buffer
+ * 			:  NULL = Failed 
 *******************************************************************************/
 struct CANTAKEPTR* can_iface_mbx_init(struct CAN_CTLBLOCK*  pctl, osThreadId tskhandle, uint32_t notebit);
 /* @brief 	: Initialize the mailbox task notification and get a 'take pointer for it.

@@ -222,7 +222,7 @@ DiscoveryF4 LEDs --
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 512);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 384);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -271,6 +271,7 @@ DiscoveryF4 LEDs --
    // CAN1 (CAN_HandleTypeDef *phcan, uint8_t canidx, uint16_t numtx, uint16_t numrx);
 	pctl1 = can_iface_init(&hcan1, 1, 32, 64);
 	if (pctl1 == NULL) morse_trap(7); // Panic LED flashing
+	if (pctl1->ret < 0) morse_trap(77);
 
 	// CAN 2
 	pctl2 = can_iface_init(&hcan2, 2, 8, 16);
@@ -676,6 +677,9 @@ void StartDefaultTask(void const * argument)
 	if (pbuf1 == NULL) morse_trap(12);
 
 	int ctr = 0; // Running count
+
+	double pi = 3.1415926535897932; // Test that floating pt is working
+
 	uint32_t heapsize;
 
 	/* Test CAN msg */
@@ -689,40 +693,34 @@ void StartDefaultTask(void const * argument)
 	{
 		testtx.can.cd.uc[i] = testtx.can.cd.uc[i-1] + 0x20 + i;
 	}
-
 	testtx.maxretryct = 8;
 	testtx.bits = 0;
 
 HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 
-  /* Infinite loop */
-#define LOOPDELAYTICKS (64*8*2)	// 1 sec Loop delay (512 Hz tick rate)
+#define LOOPDELAYTICKS ((64*8)*5)	// 5 sec Loop delay (512 Hz tick rate)
 	for ( ;; )
 	{
 		osDelay(LOOPDELAYTICKS);
 		ctr += 1;
 
 		HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
-//#define DEBUG22
-#ifdef DEBUG22
+
 		/* Display the amount of unused stack space for tasks. */
 		stackwatermark_show(defaultTaskHandle,&pbuf2,"defaultTask--");
 		stackwatermark_show(SerialTaskHandle ,&pbuf2,"SerialTask---");
-		stackwatermark_show(CanTxTaskHandle  ,&pbuf2,"CanTxTask----");
+//		stackwatermark_show(CanTxTaskHandle  ,&pbuf2,"CanTxTask----");
 		stackwatermark_show(CanRxTaskHandle  ,&pbuf2,"CanRxTask----");
 		stackwatermark_show(MailboxTaskHandle,&pbuf2,"MailboxTask--");
-		stackwatermark_show(SerialTaskReceiveHandle  ,&pbuf2,"SerialRcvTask");
-#endif
-		/* Heap usage */
-//		heapsize = xPortGetFreeHeapSize();
-//		yprintf(&pbuf2,"\n\rGetFreeHeapSize: %i used: %i",heapsize,(configTOTAL_HEAP_SIZE-heapsize));
-yprintf(&pbuf2,"\n\rdefaultTask reporting");
-		/* ==== CAN MSG sending test ===== */
-		/* Place test CAN msg to send on queue in a burst. */
-		/* Note: an odd makes the LED flash since it toggles on each msg. */
-//		for (i = 0; i < 7; i++)
-//			xQueueSendToBack(CanTxQHandle,&testtx,portMAX_DELAY);
+		stackwatermark_show(SerialTaskReceiveHandle,&pbuf2,"SerialRcvTask");
+
+		/* Heap usage (and test fp woking. */
+		heapsize = xPortGetFreeHeapSize();
+		yprintf(&pbuf2,"\n\rGetFreeHeapSize: total: %i used %i %3.1f%% free: %i",configTOTAL_HEAP_SIZE, heapsize,\
+			100.0*(float)heapsize/configTOTAL_HEAP_SIZE,(configTOTAL_HEAP_SIZE-heapsize));
+
 	}
+  /* USER CODE END 5 */ 
 }
 
 /**

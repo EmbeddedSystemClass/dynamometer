@@ -249,14 +249,13 @@ UBaseType_t uxPriority,
 TaskHandle_t *pxCreatedTask );
 */
 	BaseType_t ret = xTaskCreate(StartSerialTaskSend, "SerialTaskSend",\
-     256, NULL, taskpriority,\
+     96, NULL, taskpriority,\
      &SerialTaskHandle);
 	if (ret != pdPASS) return NULL;
 
 	SerialTaskSendQHandle = xQueueCreate(QUEUESIZE, sizeof(struct SERIALSENDTASKBCB) );
 	if (SerialTaskSendQHandle == NULL) return NULL;
 	return SerialTaskHandle;
-
 }
 /* #######################################################################
    UART interrupt callback: file|size has been sent

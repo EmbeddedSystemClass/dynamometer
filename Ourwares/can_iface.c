@@ -30,9 +30,6 @@ This simplifies the issue of disabling of interrupts
 #include "can_iface.h"
 #include "DTW_counter.h"
 
-
-
-
 /* subroutine declarations */
 static void loadmbx2(struct CAN_CTLBLOCK* pctl);
 static void moveremove2(struct CAN_CTLBLOCK* pctl);
@@ -75,9 +72,10 @@ static void canmsg_compress(struct CANRCVBUF *pcan, CAN_RxHeaderTypeDef *phal, u
 }
 /******************************************************************************
  * struct CANTAKEPTR* can_iface_add_take(struct CAN_CTLBLOCK*  pctl);
- * @brief 	: Get a 'take' pointer for accessing CAN msgs in the circular buffer
+ * @brief 	: Create a 'take' pointer for accessing CAN msgs in the circular buffer
  * @param	: pctl = pointer to our CAN control block
  * @return	: pointer to pointer pointing to 'take' location in circular CAN buffer
+ * 			:  NULL = Failed 
 *******************************************************************************/
 struct CANTAKEPTR* can_iface_add_take(struct CAN_CTLBLOCK*  pctl)
 {
@@ -91,11 +89,12 @@ taskENTER_CRITICAL();
 	/* Initialize the pointer to curret add location of the circular buffer. */
    /* Given 'p', the beginning, end, and location CAN msgs are being added
       can be accessed. */
-	p->pcir  = pctl->pcir;
+	p->pcir  = &pctl->cirptrs;
 
 	/* Start the 'take' pointer at the position in the circular buffer where
-      CAN msgs are being added. */
-	p->ptake = pctl->pcir->pwork;
+      CAN msgs are currently being added. */
+	p->ptake = pctl->cirptrs.pwork;
+
 taskEXIT_CRITICAL();
 	return p;
 }
@@ -176,6 +175,7 @@ taskENTER_CRITICAL();
 	/* Add HAL CAN control block "handle" to our control block */
 	pctl->phcan = phcan; 
 
+	/* Save CAN module index (CAN1 = 0). */
 	pctl->canidx = canidx;
 
 	/* Add new control block to list of control blocks */
@@ -224,9 +224,9 @@ taskENTER_CRITICAL();
 	if (pcann == NULL){pctl->ret = -4; taskEXIT_CRITICAL(); return NULL;} // Get buff failed
 
 	/* Initialize pointers for "add"ing CAN msgs to the circular buffer */
-	pctl->pcir->pbegin = pcann;
-	pctl->pcir->pwork  = pcann;
-	pctl->pcir->pend   = pcann + numrx;
+	pctl->cirptrs.pbegin = pcann;
+	pctl->cirptrs.pwork  = pcann;
+	pctl->cirptrs.pend   = pcann + numrx;
 
 	/* NOTE: pctl->tsknote gets initialized
       when 'MailboxTask' calls 'can_iface_mbx_init' */
@@ -438,9 +438,9 @@ volatile	struct CAN_POOLBLOCK* p = pctl->pend.plinknext;
 	ncan.pctl = pctl;
 	ncan.can = p->can;
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-			*pctl->pcir->pwork = ncan;
-			pctl->pcir->pwork++;
-			if (pctl->pcir->pwork == pctl->pcir->pend) pctl->pcir->pwork = pctl->pcir->pbegin;
+			*pctl->cirptrs.pwork = ncan;
+			pctl->cirptrs.pwork++;
+			if (pctl->cirptrs.pwork == pctl->cirptrs.pend) pctl->cirptrs.pwork = pctl->cirptrs.pbegin;
 
 			if (pctl->tsknote.tskhandle != NULL)
 			{ // Here, one task will be notified a msg added to circular buffer
@@ -450,7 +450,6 @@ volatile	struct CAN_POOLBLOCK* p = pctl->pend.plinknext;
 			}
 
 #endif
-
 
 	moveremove2(pctl);	// remove from pending list, add to free list
 	pctl->abortflag = 0;
@@ -465,6 +464,7 @@ void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *phcan)
 	loadmbx2(pctl);		// Load mailbox 0.  Mailbox should be available/empty.
 	pctl->abortflag = 0;
 }
+
 /* Error callback */
 void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *phcan)
 {
@@ -522,9 +522,9 @@ debug1 += 1;
 			canmsg_compress(&ncan.can, &header, &data[0]);
 
 			/* Place on queue for Mailbox task to filter, distribute, notify, etc. */
-			*pctl->pcir->pwork = ncan;
-			pctl->pcir->pwork++;
-			if (pctl->pcir->pwork == pctl->pcir->pend) pctl->pcir->pwork = pctl->pcir->pbegin;
+			*pctl->cirptrs.pwork = ncan; // Copy struct
+			pctl->cirptrs.pwork++;       // Advance 'add' pointer
+			if (pctl->cirptrs.pwork == pctl->cirptrs.pend) pctl->cirptrs.pwork = pctl->cirptrs.pbegin;
 
 			if (pctl->tsknote.tskhandle != NULL)
 			{ // Here, notify one task a new msg added to circular buffer
