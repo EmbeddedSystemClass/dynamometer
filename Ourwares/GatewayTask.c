@@ -22,14 +22,27 @@ CAN->PC direction CAN1 and CAN2 msgs are mixed together, except for the cases wh
 the CANIDs are identical such as DMOC msgs, in which case the CAN2 msgs are tagged 
 as 29b address.
 */
-
+#include "FreeRTOS.h"
+#include "task.h"
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_can.h"
 #include "GatewayTask.h"
 #include "can_iface.h"
 #include "MailboxTask.h"
+#include "getserialbuf.h"
+#include "SerialTaskSend.h"
+#include "morse.h"
+#include "yprintf.h"
+#include "SerialTaskReceive.h"
+#include "gateway_PCtoCAN.h"
+#include "gateway_CANtoPC.h"
 
-void StartMailboxTask(void const * argument);
+extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart6;
+
+extern struct CAN_CTLBLOCK* pctl1;	// Pointer to CAN1 control block
+
+void StartGatewayTask(void const * argument);
 
 osThreadId GatewayTaskHandle;
 
@@ -37,12 +50,12 @@ osThreadId GatewayTaskHandle;
 uint32_t GatewayTask_noteval = 0;    // Receives notification word upon an API notify
 
 /* *************************************************************************
- * osThreadId_t xGatewayTaskCreate(uint32_t taskpriority);
+ * osThreadId xGatewayTaskCreate(uint32_t taskpriority);
  * @brief	: Create task; task handle created is global for all to enjoy!
  * @param	: taskpriority = Task priority (just as it says!)
  * @return	: GatewayHandle
  * *************************************************************************/
-osThreadId_t xGatewayTaskCreate(uint32_t taskpriority)
+osThreadId xGatewayTaskCreate(uint32_t taskpriority)
 {
  /* definition and creation of CanTask */
   osThreadDef(GatewayTask, StartGatewayTask, osPriorityNormal, 0, 128);
@@ -62,11 +75,19 @@ osThreadId_t xGatewayTaskCreate(uint32_t taskpriority)
 
 void StartGatewayTask(void const * argument)
 {
+
+while(1==1) osDelay(10);
+
+	int i;
+
 	/* The lower order bits are reserved for incoming CAN module msg notifications. */
 	#define TSKGATEWAYBITc1	(1 << (STM32MAXCANNUM + 1))  // Task notification bit for huart2 incoming ascii CAN
 
 	/* notification bits processed after a 'Wait. */
 	uint32_t noteused = 0;
+
+	/* A notification copies the internal notification word to this. */
+	uint32_t noteval = 0;    // Receives notification word upon an API notify
 
 	struct SERIALRCVBCB* prbcb2;	// usart2 (PC->CAN msgs)
 	struct CANRCVBUFPLUS* pcanp;  // Basic CAN msg Plus error and seq number
@@ -123,7 +144,7 @@ void StartGatewayTask(void const * argument)
 					{						
 						/* Convert binary to the ascii/hex format for PC. */
 						xSemaphoreTake(pbuf3->semaphore, 5000);
-						gateway_CANtoPC(&pbuf3, pncan->can);
+						gateway_CANtoPC(&pbuf3, &pncan->can);
 						vSerialTaskSendQueueBuf(&pbuf3); // Place on queue for usart2 sending
 					}
 				} while (pncan != NULL);	// Drain the buffer
@@ -131,7 +152,7 @@ void StartGatewayTask(void const * argument)
 		}
 
 		/* PC->CAN: Handle incoming usart2 carrying ascii/hex CAN msgs */
-		if ((GatewayTask_noteval & TSKGATEWAYBIT04) != 0)
+		if ((GatewayTask_noteval & TSKGATEWAYBITc1) != 0)
 		{ // Here, one or more CAN msgs have been received
 			noteused |= TSKGATEWAYBITc1; // We handled the bit
 

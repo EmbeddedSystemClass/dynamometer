@@ -7,6 +7,8 @@
 #ifndef __GATEWAYTASK
 #define __GATEWAYTASK
 
+#include "stm32f4xx_hal_def.h"
+#include "cmsis_os.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "malloc.h"
@@ -15,16 +17,19 @@
 
 
 /* *************************************************************************/
-osThreadId_t xGatewayTaskCreate(uint32_t taskpriority);
+osThreadId xGatewayTaskCreate(uint32_t taskpriority);
 /* @brief	: Create task; task handle created is global for all to enjoy!
  * @param	: taskpriority = Task priority (just as it says!)
  * @return	: GatewayHandle
  * *************************************************************************/
-void StartCanTxTask(void const * argument);
+void StartGatewayTask(void const * argument);
 /*	@brief	: Task startup
  * *************************************************************************/
-
-extern osThreadId GatewayTaskHandle;
+osThreadId xGatewayTaskCreate(uint32_t taskpriority);
+/* @brief	: Create task; task handle created is global for all to enjoy!
+ * @param	: taskpriority = Task priority (just as it says!)
+ * @return	: GatewayHandle
+ * *************************************************************************/
 
 /* A notification copies the internal notification word to this. */
 extern uint32_t GatewayTask_noteval;    // Receives notification word upon an API notify

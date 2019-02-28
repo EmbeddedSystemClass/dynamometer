@@ -11,7 +11,9 @@
 #include "morse.h"
 #include "DTW_counter.h"
 #include "payload_extract.h"
+#include "GatewayTask.h"
 
+extern osThreadId GatewayTaskHandle;
 
 /* One struct for each CAN module, e.g. CAN 1, 2, 3, ... */
 struct MAILBOXCANNUM mbxcannum[STM32MAXCANNUM] = {0};
@@ -180,7 +182,7 @@ taskEXIT_CRITICAL();
 osThreadId xMailboxTaskCreate(uint32_t taskpriority)
 {
  /* definition and creation of CanTask */
-  osThreadDef(MailboxTask, StartMailboxTask, osPriorityNormal, 0, 128);
+  osThreadDef(MailboxTask, StartMailboxTask, osPriorityNormal, 0, 256);
 
   MailboxTaskHandle = osThreadCreate(osThread(MailboxTask), NULL);
 
@@ -216,9 +218,6 @@ while(1==1) osDelay(10);
 	/* notification bits processed after a 'Wait. */
 	uint32_t noteused = 0;
 
-	/* Gateway notification */
-	uint8_t gatewaynoteflag;
-
   /* Infinite MailboxTask loop */
   for(;;)
   {
@@ -234,7 +233,6 @@ while(1==1) osDelay(10);
 			{	
 				noteused |= (1 << i);
 				pmbxnum = &mbxcannum[i]; // Pt to CAN module mailbox control block
-				gatewaynoteflag = 0;
 				do
 				{
 					/* Get a pointer to the circular buffer w CAN msgs. */
@@ -242,15 +240,14 @@ while(1==1) osDelay(10);
 
 					if (pncan != NULL)
 					{ 
-						gatewaynoteflag = 1; // Notify GatewayTask only once
 						loadmbx(pmbxnum, pncan); // Load mailbox. if CANID is in list
 					}
 				} while (pncan != NULL);
 
 				/* Notify GatewayTask that one or more CAN msgs in circular buffer. */
-				if ((GatewayTaskHandle != NULL) && (1 << i)) != 0))
+				if ( (GatewayTaskHandle != NULL) && (1 << i) != 0)
 				{
-					xTaskNotify(GatewayTaskHandle,NULL, eNoAction);
+					xTaskNotify(GatewayTaskHandle,0, eNoAction);
 				}
 			}
 		}

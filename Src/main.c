@@ -76,6 +76,7 @@
 #include "gateway_PCtoCAN.h"
 #include "morse.h"
 #include "MailboxTask.h"
+#include "GatewayTask.h"
 
 /* USER CODE END Includes */
 
@@ -290,6 +291,9 @@ DiscoveryF4 LEDs --
 
 	/* Create MailboxTask */
 	xMailboxTaskCreate(1);
+
+	/* Create GatewayTask */
+	xGatewayTaskCreate(0);
 
 	/* Create Mailbox control block w 'take' pointer for each CAN module. */
 	struct MAILBOXCANNUM* pmbxret;

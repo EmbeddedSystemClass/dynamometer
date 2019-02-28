@@ -103,6 +103,7 @@ C_SOURCES += Ourtasks/gateway_PCtoCAN.c
 C_SOURCES += Ourtasks/morse.c
 C_SOURCES += Ourtasks/payload_extract.c
 C_SOURCES += Ourtasks/MailboxTask.c
+C_SOURCES += Ourtasks/GatewayTask.c
 
 # /* USER CODE END */ 
 
