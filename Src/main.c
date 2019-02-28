@@ -288,11 +288,14 @@ DiscoveryF4 LEDs --
 	/* Remove "accept all" CAN msgs and add specific id & mask, or id here. */
 	// See canfilter_setup.h
 
-	/* Create MailboxTask for each CAN module. */
+	/* Create MailboxTask */
+	xMailboxTaskCreate(1);
+
+	/* Create Mailbox control block w 'take' pointer for each CAN module. */
 	struct MAILBOXCANNUM* pmbxret;
 	// (CAN1 control block pointer, size of circular buffer)
-//$	pmbxret = MailboxTask_add_CANlist(pctl1, 48);
-//$	if (pmbxret == NULL) morse_trap(16);
+	pmbxret = MailboxTask_add_CANlist(pctl1, 48);
+	if (pmbxret == NULL) morse_trap(16);
 
 	// (CAN2 control block pointer, size of circular buffer)
 //	MailboxTask_add_CANlist(pctl1, 0); // Use default buff size
@@ -670,6 +673,8 @@ void StartDefaultTask(void const * argument)
   MX_USB_DEVICE_Init();
 
   /* USER CODE BEGIN 5 */
+	int i;
+
 	struct SERIALSENDTASKBCB* pbuf1 = getserialbuf(&huart6,96);
 	if (pbuf1 == NULL) morse_trap(11);
 
@@ -677,9 +682,6 @@ void StartDefaultTask(void const * argument)
 	if (pbuf1 == NULL) morse_trap(12);
 
 	int ctr = 0; // Running count
-
-	double pi = 3.1415926535897932; // Test that floating pt is working
-
 	uint32_t heapsize;
 
 	/* Test CAN msg */
@@ -687,12 +689,8 @@ void StartDefaultTask(void const * argument)
 	testtx.pctl = pctl1;
 	testtx.can.id = 0xc2200000;
 	testtx.can.dlc = 8;
-	testtx.can.cd.uc[0] = 0x01;
-	int i;
-	for (i = 1; i< 8; i++)
-	{
-		testtx.can.cd.uc[i] = testtx.can.cd.uc[i-1] + 0x20 + i;
-	}
+	for (i = 0; i < 8; i++)
+		testtx.can.cd.uc[i] = 0x30 + i;
 	testtx.maxretryct = 8;
 	testtx.bits = 0;
 
@@ -702,15 +700,15 @@ HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 	for ( ;; )
 	{
 		osDelay(LOOPDELAYTICKS);
-		ctr += 1;
 
 		HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 
 		/* Display the amount of unused stack space for tasks. */
+		yprintf(&pbuf2,"\n\r%4i Unused Task stack space--", ctr++);
 		stackwatermark_show(defaultTaskHandle,&pbuf2,"defaultTask--");
 		stackwatermark_show(SerialTaskHandle ,&pbuf2,"SerialTask---");
-//		stackwatermark_show(CanTxTaskHandle  ,&pbuf2,"CanTxTask----");
-		stackwatermark_show(CanRxTaskHandle  ,&pbuf2,"CanRxTask----");
+		stackwatermark_show(CanTxTaskHandle  ,&pbuf2,"CanTxTask----");
+//		stackwatermark_show(CanRxTaskHandle  ,&pbuf2,"CanRxTask----");
 		stackwatermark_show(MailboxTaskHandle,&pbuf2,"MailboxTask--");
 		stackwatermark_show(SerialTaskReceiveHandle,&pbuf2,"SerialRcvTask");
 
@@ -718,6 +716,12 @@ HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 		heapsize = xPortGetFreeHeapSize();
 		yprintf(&pbuf2,"\n\rGetFreeHeapSize: total: %i used %i %3.1f%% free: %i",configTOTAL_HEAP_SIZE, heapsize,\
 			100.0*(float)heapsize/configTOTAL_HEAP_SIZE,(configTOTAL_HEAP_SIZE-heapsize));
+
+	/* ==== CAN MSG sending test ===== */
+	/* Place test CAN msg to send on queue in a burst. */
+	/* Note: an odd makes the LED flash since it toggles on each msg. */
+	for (i = 0; i < 7; i++)
+		xQueueSendToBack(CanTxQHandle,&testtx,portMAX_DELAY);
 
 	}
   /* USER CODE END 5 */ 

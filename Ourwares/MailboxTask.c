@@ -13,21 +13,8 @@
 #include "payload_extract.h"
 
 
-#define STM32MAXCANNUM 3	// So far STM32 only has 3 CAN modules
-#define MBXARRAYSIZE	32	// Default array size of mailbox pointer array
-
-struct MAILBOXCANNUM
-{
-	struct CAN_CTLBLOCK* pctl;     // CAN control block pointer associated with this mailbox list
-	struct MAILBOXCAN** pmbxarray; // Point to sorted mailbox pointer array[0]
-	struct CANTAKEPTR* ptake;      // "Take" pointer for can_iface circular buffer
-	uint32_t notebit;              // Notification bit for this CAN module circular buffer
-	uint16_t arraysizemax;         // Mailbox pointer array size that was calloc'd  
-	uint16_t arraysizecur;         // Mailbox pointer array populated count
-};
-
 /* One struct for each CAN module, e.g. CAN 1, 2, 3, ... */
-static struct MAILBOXCANNUM mbxcannum[STM32MAXCANNUM] = {0};
+struct MAILBOXCANNUM mbxcannum[STM32MAXCANNUM] = {0};
 
 osThreadId MailboxTaskHandle; // This wonderful task handle
 
@@ -178,7 +165,7 @@ taskENTER_CRITICAL();
 		pnotex->tskhandle = xTaskGetCurrentTaskHandle();
 		pnotex->notebit = notebit;
 	}
-// TODO: New mailbox w CAN ID so sort pointer array by CAN id here.
+// TODO: Sort pointers for new Mailbox for later binary lookup on CAN ID.
 
 taskEXIT_CRITICAL();
 	return pmbx;
@@ -194,7 +181,9 @@ osThreadId xMailboxTaskCreate(uint32_t taskpriority)
 {
  /* definition and creation of CanTask */
   osThreadDef(MailboxTask, StartMailboxTask, osPriorityNormal, 0, 128);
+
   MailboxTaskHandle = osThreadCreate(osThread(MailboxTask), NULL);
+
 	vTaskPrioritySet( MailboxTaskHandle, taskpriority );
 	return MailboxTaskHandle;
 }
@@ -216,8 +205,8 @@ while(1==1) osDelay(10);
 	{
 		if (mbxcannum[i].pmbxarray != NULL)
 		{
-					ptake[i] = can_iface_mbx_init(mbxcannum[i].pctl, NULL, (1 << i));
-					if (ptake[i] == NULL) morse_trap(22);
+			ptake[i] = can_iface_mbx_init(mbxcannum[i].pctl, NULL, (1 << i));
+			if (ptake[i] == NULL) morse_trap(22);
 		}
 	}
 
@@ -227,7 +216,10 @@ while(1==1) osDelay(10);
 	/* notification bits processed after a 'Wait. */
 	uint32_t noteused = 0;
 
-  /* Infinite RTOS Task loop */
+	/* Gateway notification */
+	uint8_t gatewaynoteflag;
+
+  /* Infinite MailboxTask loop */
   for(;;)
   {
 		/* Wait for a CAN module to load its circular buffer. */
@@ -242,16 +234,24 @@ while(1==1) osDelay(10);
 			{	
 				noteused |= (1 << i);
 				pmbxnum = &mbxcannum[i]; // Pt to CAN module mailbox control block
+				gatewaynoteflag = 0;
 				do
 				{
 					/* Get a pointer to the circular buffer w CAN msgs. */
 					pncan = can_iface_get_CANmsg(pmbxnum->ptake);
 
 					if (pncan != NULL)
-					{ // Load mailbox. of CANID is in list
-						loadmbx(pmbxnum, pncan);
+					{ 
+						gatewaynoteflag = 1; // Notify GatewayTask only once
+						loadmbx(pmbxnum, pncan); // Load mailbox. if CANID is in list
 					}
 				} while (pncan != NULL);
+
+				/* Notify GatewayTask that one or more CAN msgs in circular buffer. */
+				if ((GatewayTaskHandle != NULL) && (1 << i)) != 0))
+				{
+					xTaskNotify(GatewayTaskHandle,NULL, eNoAction);
+				}
 			}
 		}
   }

@@ -15,6 +15,9 @@
 #include "common_can.h"
 #include "can_iface.h"
 
+#define STM32MAXCANNUM 2	// So far just two.
+#define MBXARRAYSIZE	32	// Default array size of mailbox pointer array
+
 /* Notification bit assignments for 'MailboxTask' */
 // The first three notification bits are reserved for CAN modules 
 #define MBXNOTEBITCAN1 (1 << 0)	// Notification bit for CAN1 msgs
@@ -58,6 +61,16 @@ struct MAILBOXCAN
 	uint8_t paytype;             // Code for payload type
 };
 
+struct MAILBOXCANNUM
+{
+	struct CAN_CTLBLOCK* pctl;     // CAN control block pointer associated with this mailbox list
+	struct MAILBOXCAN** pmbxarray; // Point to sorted mailbox pointer array[0]
+	struct CANTAKEPTR* ptake;      // "Take" pointer for can_iface circular buffer
+	uint32_t notebit;              // Notification bit for this CAN module circular buffer
+	uint16_t arraysizemax;         // Mailbox pointer array size that was calloc'd  
+	uint16_t arraysizecur;         // Mailbox pointer array populated count
+};
+
 /* *************************************************************************/
 struct MAILBOXCANNUM* MailboxTask_add_CANlist(struct CAN_CTLBLOCK* pctl, uint16_t arraysize);
 /*	@brief	: Add CAN module mailbox list
@@ -85,6 +98,7 @@ void StartMailboxTask(void const * argument);
  * *************************************************************************/
 
 extern osThreadId MailboxTaskHandle;
+extern struct MAILBOXCANNUM mbxcannum[STM32MAXCANNUM];
 
 #endif
 
