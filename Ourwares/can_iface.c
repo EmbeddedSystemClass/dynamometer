@@ -501,7 +501,7 @@ uint32_t debug1;
 static void unloadfifo(CAN_HandleTypeDef *phcan, uint32_t RxFifo)
 {
 	struct CANRCVBUFN ncan; // CAN msg plus pctl
-	ncan.dtw = DTWTIME;
+	ncan.toa = DTWTIME;
 debug1 += 1;
 	HAL_StatusTypeDef ret;
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;

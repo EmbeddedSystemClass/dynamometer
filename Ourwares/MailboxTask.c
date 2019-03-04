@@ -37,49 +37,99 @@ struct MAILBOXCANNUM* MailboxTask_add_CANlist(struct CAN_CTLBLOCK* pctl, uint16_
 
 	if (pctl == NULL) return NULL; // Oops
 
-	if (arraysize == 0)
-		arraysize = MBXARRAYSIZE;	// Use default size
+	if (arraysize == 0)return NULL; // Oops
 
-	/* Max number of mailboxes for this CAN module */
+taskENTER_CRITICAL();
+
+	/* Save max number of mailboxes for this CAN module */
 	mbxcannum[pctl->canidx].arraysizemax = arraysize;
 
 	/* This needed to find the CAN module in 'StartMailboxTask' */
 	mbxcannum[pctl->canidx].pctl = pctl;
 
-taskENTER_CRITICAL();
-
 	/* Get memory for the array of mailbox pointers */
 	ppmbxarray = (struct MAILBOXCAN**)calloc(arraysize, sizeof(struct MAILBOXCAN*));
-	if (ppmbxarray == NULL){ taskEXIT_CRITICAL();return NULL;}
+	if (ppmbxarray == NULL) {taskEXIT_CRITICAL();return NULL;}
+
+	/* xMailboxTaskCreate needs to be called before this 'add to list' */
+	if (MailboxTaskHandle == NULL) {taskEXIT_CRITICAL();return NULL;}
 
 	/* Get a circular buffer 'take' pointer for this CAN module. */
 	// The first three notification bits are reserved for CAN modules 
-	mbxcannum[pctl->canidx].ptake = can_iface_mbx_init(pctl, NULL, (1 << pctl->canidx) );
-
-taskEXIT_CRITICAL();
+	mbxcannum[pctl->canidx].ptake = can_iface_mbx_init(pctl, MailboxTaskHandle, (1 << pctl->canidx) );
 
 	/* Save pointer to array of pointers to mailboxes. */
 	mbxcannum[pctl->canidx].pmbxarray = ppmbxarray;
 
 	/* Save number of mailbox pointers */
 	mbxcannum[pctl->canidx].arraysizemax = arraysize; // Max
-	mbxcannum[pctl->canidx].arraysizecur = 0; // Number created
 
-	/* Most important here, is to return a non-NULL pointer. */
+	/* Start with no mailboxes created. */
+	mbxcannum[pctl->canidx].arraysizecur = 0;
+
+	/* What is important to return a non-NULL pointer to show success. */
+taskEXIT_CRITICAL();
 	return &mbxcannum[pctl->canidx];
+}
+/* *************************************************************************
+ *  struct CANNOTIFYLIST* MailboxTask_disable_notifications(struct MAILBOXCAN* pmbx);
+ *  struct CANNOTIFYLIST* MailboxTask_enable_notifications (struct MAILBOXCAN* pmbx);
+ *	@brief	: Disable, enable mailbox notifications
+ * @param	: pmbx = pointer to mailbox
+ * @return	: Pointer to notification block, for calling task; NULL = task not found
+ * *************************************************************************/
+static struct CANNOTIFYLIST* noteskip(struct MAILBOXCAN* pmbx, uint8_t skip)
+{
+	osThreadId tskhandle = xTaskGetCurrentTaskHandle();
+	struct CANNOTIFYLIST* pnotetmp;	
+	struct CANNOTIFYLIST* pnotex;	
+
+	// Traverse linked list to find task
+	pnotetmp = pmbx->pnote;	// Ptr to head of list
+	if (pnotetmp == NULL) return NULL; // No notifications setup!
+	do 
+	{
+		if (tskhandle == pnotetmp->tskhandle)
+		{ // Notification for "this" task found
+			pnotetmp->skip = skip; // Update 'skip' flag
+			return pnotetmp; // Ptr to notification struct
+		}
+			pnotex   = pnotetmp;
+			pnotetmp = pnotetmp->pnext;
+	} while (pnotetmp != pnotex);
+	return NULL; // Here, the current running task not found
+}
+struct CANNOTIFYLIST* MailboxTask_disable_notifications(struct MAILBOXCAN* pmbx)
+{
+	return noteskip(pmbx, 1);
+}
+struct CANNOTIFYLIST* MailboxTask_enable_notifications(struct MAILBOXCAN* pmbx)
+{
+	return noteskip(pmbx, 0);
 }
 
 /* *************************************************************************
- * struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl, uint32_t canid, uint32_t notebit, uint8_t paytype);
- *	@brief	: Add a mailbox
+ * struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl,\
+		 uint32_t canid,\
+       osThreadId tskhandle,\
+		 uint32_t notebit,\
+		 uint8_t noteskip,\
+		 uint8_t paytype);
+ *	@brief	: Add a mailbox, given CAN control block ptr, and other stuff
  * @param	: pctl = Pointer to CAN control block, i.e. CAN module/CAN bus, for mailbox
  * @param	: canid = CAN ID
- * @param	: notebit = notification bit; NULL = no notification if tskhandle = NULL
+ * @param	: tskhandle = Task handle; NULL for use current task; 
+ * @param	: notebit = notification bit; NULL = no notification
+ * @paran	: noteskip = notify = 0; skip notification = 1;
  * @param	: paytype = payload type code (see 'PAYLOAD_TYPE_INSERT.sql' in 'GliderWinchCommons/embed/svn_common/db')
  * @return	: Pointer to mailbox; NULL = failed
- * NOTE: This is normally called from tasks that have started, but are not in the endless loop
  * *************************************************************************/
-struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl, uint32_t canid, uint32_t notebit, uint8_t paytype)
+struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl,\
+		 uint32_t canid,\
+       osThreadId tskhandle,\
+		 uint32_t notebit,\
+		 uint8_t noteskip,\
+		 uint8_t paytype)
 {
 	int j;
 	struct MAILBOXCAN* pmbx;
@@ -87,8 +137,14 @@ struct MAILBOXCAN* MailboxTask_add(struct CAN_CTLBLOCK* pctl, uint32_t canid, ui
 	struct CANNOTIFYLIST* pnotetmp;
 	struct MAILBOXCAN** ppmbx;
 
+	/* Check that the bozo programmer got the prior initializations done correctly. */
 	if (canid == 0)    return NULL;
 	if (pctl  == NULL) return NULL;
+	if (pctl->canidx >= STM32MAXCANNUM) return NULL;
+	if (mbxcannum[pctl->canidx].pctl == NULL) return NULL;
+
+	if (tskhandle == NULL)
+		tskhandle = xTaskGetCurrentTaskHandle();
 
 	/* Pointer to beginning of array of mailbox pointers. */
 	ppmbx = mbxcannum[pctl->canidx].pmbxarray;
@@ -113,10 +169,13 @@ taskENTER_CRITICAL();
 				/* Check if this mailbox has any notifications */
 				if (pmbx->pnote == NULL)
 				{ // This is the first notification for this mailbox.
-					pmbx->pnote = pnotex;   // Mailbox points to first notification
-					pnotex->pnext = pnotex;	// Last on list points to self
-					pnotex->tskhandle = xTaskGetCurrentTaskHandle();
-					pnotex->notebit = notebit;
+					pmbx->pnote       = pnotex;   // Mailbox points to first notification
+					pnotex->pnext     = pnotex;	// Last on list points to self
+					pnotex->tskhandle = tskhandle;
+ 					pnotex->notebit   = notebit;  // Notification bit to use
+					pnotex->skip      = noteskip; // Skip notification flag
+					/* Here, there is no need to sort array on CANID for a binary lookup
+						since a new mailbox was not added. */
 					taskEXIT_CRITICAL();
 					return pmbx;
 				}
@@ -127,10 +186,13 @@ taskENTER_CRITICAL();
 					while (pnotetmp != pnotetmp->pnext) pnotetmp = pnotetmp->pnext;
 
 					/* Add to list and initialize. */
-					pnotetmp->pnext = pnotex; // End block now points to new block
-					pnotex->pnext   = pnotex; // New block points to self
-					pnotex->tskhandle = xTaskGetCurrentTaskHandle();
-					pnotex->notebit = notebit;
+					pnotetmp->pnext   = pnotex; // End block now points to new block
+					pnotex->pnext     = pnotex; // New block points to self
+					pnotex->tskhandle = tskhandle;
+ 					pnotex->notebit   = notebit;  // Notification bit to use
+					pnotex->skip      = noteskip; // Skip notification flag
+					/* Here, there is no need to sort array on CANID for a binary lookup
+						since a new mailbox was not added. */
 					taskEXIT_CRITICAL();
 					return pmbx;
 				}
@@ -142,10 +204,13 @@ taskENTER_CRITICAL();
 		}
 	}
 
-	/* Here, a mailbox for 'canid' was not found in the list. */
-	/* Create a mailbox for this canid                        */
+	/* Here, a mailbox for 'canid' was not found in the list.  
+      Or, this is the first mailbox created.                  
 
-	// Point to next available location in array of mailbox pointers. */
+      Create a mailbox for this canid                         */
+
+	// Point to next available location in array of mailbox pointers.
+   //                 pointer to beginning   + number of entries
 	ppmbx = mbxcannum[pctl->canidx].pmbxarray + mbxcannum[pctl->canidx].arraysizecur;
 
 	/* Create one mailbox */
@@ -155,19 +220,21 @@ taskENTER_CRITICAL();
 	pmbx->ctr   = 0;       // Redundant (calloc set it zero)
 	pmbx->pnote = NULL;    // Redundant (calloc set it zero)
 	pmbx->ncan. can.id = canid;   // Save CAN id
-	pmbx->ncan.dtw     = DTWTIME; // Set current time count
+	pmbx->ncan.toa     = DTWTIME; // Set current time for initial time-of-arrival
 
 	if (notebit != 0)
 	{ // Here, a notification is requested.  Add first instance of notification  
 		pnotex = (struct CANNOTIFYLIST*)calloc(1, sizeof(struct CANNOTIFYLIST));
 		if (pnotex == NULL){ taskEXIT_CRITICAL();return NULL;}
 
-		pmbx->pnote   = pnotex; // Mailbox points to first notification
-		pnotex->pnext = pnotex;	// Last on list points to self
-		pnotex->tskhandle = xTaskGetCurrentTaskHandle();
-		pnotex->notebit = notebit;
+		pmbx->pnote       = pnotex; // Mailbox points to first notification
+		pnotex->pnext     = pnotex;	// Last on list points to self
+		pnotex->tskhandle = tskhandle; // Task to notify
+		pnotex->notebit   = notebit;  // Notification bit to use
+		pnotex->skip      = noteskip; // Skip notification flag
 	}
-// TODO: Sort pointers for new Mailbox for later binary lookup on CAN ID.
+
+// TODO: Sort pointers for new Mailbox if later binary lookup on CAN ID.
 
 taskEXIT_CRITICAL();
 	return pmbx;
@@ -200,13 +267,13 @@ void StartMailboxTask(void const * argument)
 	struct CANRCVBUFN* pncan;
 	struct CANTAKEPTR* ptake[STM32MAXCANNUM];
 
-while(1==1) osDelay(10);
+//while(1==1) osDelay(10); // Debug: make task do nothing
 
 	/* Get circular buffer pointers for each CAN module in list. */	
 	for (i = 0; i < STM32MAXCANNUM; i++)
 	{
 		if (mbxcannum[i].pmbxarray != NULL)
-		{
+		{ // Here, array of pointers was initialized
 			ptake[i] = can_iface_mbx_init(mbxcannum[i].pctl, NULL, (1 << i));
 			if (ptake[i] == NULL) morse_trap(22);
 		}
@@ -239,7 +306,7 @@ while(1==1) osDelay(10);
 					pncan = can_iface_get_CANmsg(pmbxnum->ptake);
 
 					if (pncan != NULL)
-					{ 
+					{ // Here, CAN msg is available
 						loadmbx(pmbxnum, pncan); // Load mailbox. if CANID is in list
 					}
 				} while (pncan != NULL);
@@ -290,29 +357,34 @@ static struct MAILBOXCAN* loadmbx(struct MAILBOXCANNUM* pmbxnum, struct CANRCVBU
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	/* Check if received CAN id is in the mailbox CAN id list. */
-	// 'lookup' is a straight loop; use 'lookupq' for binary search
+	// 'lookup' is a straight loop; use 'lookupq' for binary search (when implemented)
 	struct MAILBOXCAN* pmbx = lookup(pmbxnum, pncan);
 	if (pmbx == NULL) return NULL; // Return: CAN id not in mailbox list
 
 	/* Here, this CAN msg has a mailbox. */
-	// Extract payload
+	// Copy CAN msg into mailbox, and extract payload
 	payload_extract(pmbx, pncan);
 
 	/* Execute notifications */
-	pnotex = pmbx->pnote;
-	if (pnotex == NULL) return pmbx; // Return: no notifications
+	pnotetmp = pmbx->pnote; // Get ptr to head of linked list
+	if (pnotetmp == NULL) return pmbx; // CANID found, but no notifications
 	
 	// Traverse linked list making notifications
-	pnotetmp = pnotex;	
 	do 
 	{
-		xTaskNotifyFromISR(pnotetmp->tskhandle,\
-		pnotetmp->notebit, eSetBits,\
-		&xHigherPriorityTaskWoken );
+		/* Make a notification if "not skip" and 'taskhandle and 'notebit' were setup */
+		if ((pnotetmp->skip == 0) && (pnotetmp->tskhandle != NULL) && (pnotetmp->notebit != 0))
+		{
+			xTaskNotifyFromISR(pnotetmp->tskhandle,\
+				pnotetmp->notebit, eSetBits,\
+				&xHigherPriorityTaskWoken );	
+		}
 
-		pnotetmp = pnotex->pnext;
-		pnotex = pnotex->pnext;
-	} while (pnotetmp != pnotetmp->pnext);
+		/* Step to next item in list. */
+			pnotex   = pnotetmp;
+			pnotetmp = pnotetmp->pnext;
+
+	} while (pnotetmp != pnotex);
 
 	return pmbx;
 }
