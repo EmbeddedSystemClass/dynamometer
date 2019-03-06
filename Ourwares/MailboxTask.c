@@ -262,10 +262,11 @@ osThreadId xMailboxTaskCreate(uint32_t taskpriority)
  * *************************************************************************/
 void StartMailboxTask(void const * argument)
 {
-	int i;
 	struct MAILBOXCANNUM* pmbxnum;
 	struct CANRCVBUFN* pncan;
 	struct CANTAKEPTR* ptake[STM32MAXCANNUM];
+	int i;
+	int8_t flag;
 
 //while(1==1) osDelay(10); // Debug: make task do nothing
 
@@ -296,10 +297,12 @@ void StartMailboxTask(void const * argument)
 		/* Step through possible notification bits */
 		for (i = 0; i < STM32MAXCANNUM; i++)
 		{
+			flag = 0;
 			if ((noteval & (1 << i)) != 0)
 			{	
 				noteused |= (1 << i);
 				pmbxnum = &mbxcannum[i]; // Pt to CAN module mailbox control block
+if (pmbxnum == NULL) morse_trap(77);
 				do
 				{
 					/* Get a pointer to the circular buffer w CAN msgs. */
@@ -307,15 +310,17 @@ void StartMailboxTask(void const * argument)
 
 					if (pncan != NULL)
 					{ // Here, CAN msg is available
+						flag = 1;
 						loadmbx(pmbxnum, pncan); // Load mailbox. if CANID is in list
 					}
 				} while (pncan != NULL);
 
 				/* Notify GatewayTask that one or more CAN msgs in circular buffer. */
-				if ( (GatewayTaskHandle != NULL) && (1 << i) != 0)
+				if ( (GatewayTaskHandle != NULL) && ((noteval & (1 << i)) != 0) && (flag != 0) )
 				{
-					xTaskNotify(GatewayTaskHandle,0, eNoAction);
+					xTaskNotify(GatewayTaskHandle, (1 << i), eSetBits);
 				}
+
 			}
 		}
   }

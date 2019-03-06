@@ -46,7 +46,7 @@ void StartGatewayTask(void const * argument);
 
 osThreadId GatewayTaskHandle;
 
-/* A notification copies the internal notification word to this. */
+/* A notification to Gateway copies the internal notification word to this. */
 uint32_t GatewayTask_noteval = 0;    // Receives notification word upon an API notify
 
 /* *************************************************************************
@@ -68,15 +68,10 @@ osThreadId xGatewayTaskCreate(uint32_t taskpriority)
  * void StartGatewayTask(void const * argument);
  *	@brief	: Task startup
  * *************************************************************************/
-/*
-
-
-*/
-
 void StartGatewayTask(void const * argument)
 {
 
-while(1==1) osDelay(10);
+//while(1==1) osDelay(10);
 
 	int i;
 
@@ -181,9 +176,6 @@ while(1==1) osDelay(10);
 				}
 			} while ( pcanp != NULL);
 		}
-
-
-
   }
 }
 
