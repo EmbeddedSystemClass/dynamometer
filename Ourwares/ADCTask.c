@@ -1,196 +1,87 @@
 /******************************************************************************
 * File Name          : ADCTask.c
 * Date First Issued  : 02/01/2019
-* Description        : ADC w DMA using FreeRTOS/ST HAL
+* Description        : Processing ADC readings after ADC/DMA issues interrupt
 *******************************************************************************/
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include "queue.h"
 #include "cmsis_os.h"
 #include "malloc.h"
 
 #include "ADCTask.h"
 
-
-
 static int argument1;
-QueueHandle_t ADCQHandle;
+void StartADCTask(void* argument);
 
 static uint16_t* adcbuffptr;
 
+osThreadId ADCTaskHandle;
 
 /* *************************************************************************
- * struct SERIALRCVBCB* xSerialTaskRxAdduart(\
-		UART_HandleTypeDef* phuart,\
-		int8_t    dmaflag,\
-		uint32_t  notebit,\
-		uint32_t* pnoteval,\
-		uint8_t   numline,\
-		uint8_t   linesize,\
-		char  dmasize);
- *	@brief	: Setup circular line buffers this uart
- * @param	: phuart = pointer to uart control block
- * @param	: dmaflag = 0 for char-by-char mode; 1 = dma mode
- * @param	: notebit = unique bit for notification for this task
- * @param	: pnoteval = pointer to word receiving notification word from OS
- * @param	: numline = number of line buffers in circular line buffer
- * @param	: linesize = number of chars in each line buffer
- * @param	: dmasize = number of chars in total circular DMA buffer
- * @return	: pointer = 'RCVBCB for this uart; NULL = failed
+ * void* xADCTask_init(void);
+ * @brief	: Initialize handling of ADC readings
+ * @param	: 
+ * @return	:
  * *************************************************************************/
-struct SERIALRCVBCB* xSerialTaskRxAdduart(\
-		UART_HandleTypeDef* phuart,\
-		int8_t    dmaflag,\
-		uint32_t  notebit,\
-		uint32_t* pnoteval,\
-		uint8_t   numline,\
-		uint8_t   linesize,\
-		char  dmasize)
+	#define TSK02BIT02	(1 << 0)  // Task notification bit for ADC dma 1st 1/2 (adctask.c)
+	#define TSK02BIT03	(1 << 1)  // Task notification bit for ADC dma end (adctask.c)
+
+void* xADCTask_init(void)
 {
-	struct SERIALRCVBCB* ptmp1;
-	struct SERIALRCVBCB* ptmp2;
-	char* pbuf;
 
-	/* There can be a problem with Tasks not started if the calling task gets here first */
-	osDelay(10);
 
-taskENTER_CRITICAL();
-	/* Add block with circular buffer pointers for this uart/usart to list */
-	ptmp1 = (struct SERIALRCVBCB*)calloc(1, sizeof(struct SERIALRCVBCB));
-
-taskEXIT_CRITICAL();
-	return ptmp1;	// Success return pointer to this 'BCB
+	return 1;
 }
 
+/* *************************************************************************
+ * osThreadId xADCTaskCreate(uint32_t taskpriority);
+ * @brief	: Create task; task handle created is global for all to enjoy!
+ * @param	: taskpriority = Task priority (just as it says!)
+ * @return	: ADCTaskHandle
+ * *************************************************************************/
+osThreadId xADCTaskCreate(uint32_t taskpriority)
+{
+ 	osThreadDef(ADCTask, StartSADCTask, osPriorityNormal, 0, 256);
+	ADCTaskHandle = osThreadCreate(osThread(MailboxTask), NULL);
+	vTaskPrioritySet( ADCTaskHandle, taskpriority );
+	return ADCTaskHandle;
+}
 /* *************************************************************************
  * void StartADCTask(void* argument);
  *	@brief	: Task startup
  * *************************************************************************/
 void StartADCTask(void* argument)
 {
+	/* A notification copies the internal notification word to this. */
+	uint32_t noteval = 0;    // Receives notification word upon an API notify
+
+	/* notification bits processed after a 'Wait. */
+	uint32_t noteused = 0;
+
+	/* Get buffers, "our" control block, and start ADC/DMA running. */
+	struct ADCDMATSKBLK* pblk = adctask_init(&hadc1,TSK02BIT02,TSK02BIT03,&noteval,ADCSEQNUM);
+	if (pblk == NULL) {HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15,GPIO_PIN_SET); morse_trap(15);}
+
+	uint64_t* psum;
 
   /* Infinite loop */
   for(;;)
   {
+		/* Wait for DMA interrupt */
+		xTaskNotifyWait(noteused, 0, &noteval, portMAX_DELAY);
+		noteused = 0;	// Accumulate bits in 'noteval' processed.
 
+		/* We handled one, or both, noteval bits */
+		noteused |= (pblk->notebit1 | pblk->notebit2);
+
+		/* Sum the readings 1/2 of DMA buffer to an array. */
+		psum = adctask_sum(pblk);	// Sum 1/2 dma buffer 
+
+		adcparams_internal((psum+ADC1IDX_INTERNALTEMP),(psum+ADC1IDX_INTERNALVREF));
+		
   }
 }
-/* *************************************************************************
- * QueueHandle_t xADCTaskCreate(uint16_t queuesize, uint32_t taskpriority);
- * @brief	: Create task and queue for pointer to filtered results
- * @brief	: queuesize = number of items queue will hold
- * @param	: taskpriority = Task priority (just as it says!)
- * @return	: QHandle
- * *************************************************************************/
- BaseType_t xADCTaskCreate(uint16_t queuesize, uint32_t taskpriority)
-{
-/*
-BaseType_t xTaskCreate( TaskFunction_t pvTaskCode,
-const char * const pcName,
-unsigned short usStackDepth,
-void *pvParameters,
-UBaseType_t uxPriority,
-TaskHandle_t *pxCreatedTask );
-*/
-	return xTaskCreate(StartADCTask, "StartADCTask",\
-     96, NULL, taskpriority,\
-     &ADCTaskHandle);
 
-	/* FreeRTOS queue for task with data to send. */
-	ADCQHandle = xQueueCreate(queuesize, sizeof(adcbuffptr));
-	return ADCQHandle;
-
-//	return ADCTaskHandle;
-}
-/* *************************************************************************
- * char* xADCTaskGetline(struct SERIALRCVBCB* pbcb);
- *	@brief	: Load buffer control block onto queue for sending
- * @param	: pbcb = Pointer to Buffer Control Block
- * @return	: Pointer to line buffer; NULL = no new lines
- * *************************************************************************/
-char* xADCTaskGetline(struct SERIALRCVBCB* pbcb)
-{
-	char* p = NULL;
-
-	/* Check no new lines. */
-	if (pbcb->ptake == pbcb->padd) return p;
-	p = pbcb->ptake;
-
-	/* Advance 'take' pointer w wraparound check. */
-	pbcb->ptake += pbcb->linesize;
-	if (pbcb->ptake == pbcb->pend) pbcb->ptake = pbcb->pbegin;
-
-	return p;
-}
-/* *************************************************************************
- * static void advancebuf(struct SERIALRCVBCB* prtmp);
- * @brief	: Advance to next line buffer
- * *************************************************************************/
-
-/* *************************************************************************
- * static void advanceptr(struct SERIALRCVBCB* prtmp);
- * @brief	: Advance pointer within the active line buffer
- * *************************************************************************/
-
-/* *************************************************************************
- * struct SERIALRCVBCB* getrbcb(UART_HandleTypeDef *phuart);
- * @brief	: Get the rbcb pointer, given the uart handle
- * @return	: NULL = oops!, otherwise pointer to rbcb
- * *************************************************************************/
-
-/* *************************************************************************
- * static void unloaddma(struct SERIALRCVBCB* prbcb);
- * @brief	: DMA: Check for line terminator and store; enter from task poll
- * @param	: prbcb = pointer to buffer control block for uart causing callback
- * *************************************************************************/
-
-/* #######################################################################
-   UART interrupt callbacks
-   ####################################################################### */
-/* *************************************************************************
- * void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *phuart);
- * @brief	: DMA callback at the halfway point in the circular buffer
- * *************************************************************************/
-/* NOTE: under interrupt from callback. */
-
-/* DMA Half buffer complete callback (dma only) */
-void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *phuart)
-{
-	HAL_UART_RxCpltCallback(phuart);
-}
-/* *************************************************************************
- * void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *phuart);
- * @brief	: DMA callback at the halfway point in the circular buffer
- *				: OR, char-by-char completion of sending
- * *************************************************************************/
-/* DMA buffer complete, => OR <= char-by-char complete */
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *phuart)
-{
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-
-
-	/* Trigger Recieve Task to poll dma uarts */
-	xTaskNotifyFromISR(ADCTaskHandle, 
-		0,	/* 'or' bit assigned to buffer to notification value. */
-		eSetBits,      /* Set 'or' option */
-		&xHigherPriorityTaskWoken ); 
-
-	portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
-	return;
-}
-/* *************************************************************************
- * void HAL_UART_ErrorCallback(UART_HandleTypeDef *phuart);
- *	@brief	: Call back from receive errror, stm32f4xx_hal_uart
- * *************************************************************************/
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *phuart)
-{
-	/* Look up buffer control block, given uart handle */
-	struct SERIALRCVBCB* prtmp = getrbcb(phuart);
-	prtmp->errorct += 1;
-	return;
-}
 
 

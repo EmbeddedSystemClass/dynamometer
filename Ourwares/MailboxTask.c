@@ -302,7 +302,7 @@ void StartMailboxTask(void const * argument)
 			{	
 				noteused |= (1 << i);
 				pmbxnum = &mbxcannum[i]; // Pt to CAN module mailbox control block
-if (pmbxnum == NULL) morse_trap(77);
+if (pmbxnum == NULL) morse_trap(77); // Debug trap
 				do
 				{
 					/* Get a pointer to the circular buffer w CAN msgs. */

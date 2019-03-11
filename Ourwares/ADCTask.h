@@ -12,14 +12,14 @@
 #include "cmsis_os.h"
 #include "stm32f4xx_hal.h"
 
-#define ADCSEQSIZE	5	// Number of ADCs each sequence
+#define ADCSEQNUM 16  // Number of ADC scans in 1/2 of the DMA buffer
 
-struct ADCQITEM
-{
-	uint32_t adc[ADCSEQSIZE];
-
-};
-
+/* *************************************************************************/
+osThreadId xADCTaskCreate(uint32_t taskpriority);
+/* @brief	: Create task; task handle created is global for all to enjoy!
+ * @param	: taskpriority = Task priority (just as it says!)
+ * @return	: ADCTaskHandle
+ * *************************************************************************/
 
 #endif
 

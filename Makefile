@@ -96,14 +96,16 @@ C_SOURCES += Ourwares/PC_gateway_comm.c
 C_SOURCES += Ourwares/gateway_comm.c
 C_SOURCES += Ourwares/gateway_CANtoPC.c
 C_SOURCES += Ourwares/SerialTaskReceive.c
+C_SOURCES += Ourwares/yscanf.c
+C_SOURCES += Ourwares/adctask.c
+C_SOURCES += Ourwares/gateway_PCtoCAN.c
+C_SOURCES += Ourwares/morse.c
+C_SOURCES += Ourwares/payload_extract.c
+C_SOURCES += Ourwares/MailboxTask.c
+C_SOURCES += Ourwares/GatewayTask.c
+
 C_SOURCES += Ourtasks/stackwatermark.c
-C_SOURCES += Ourtasks/yscanf.c
-C_SOURCES += Ourtasks/adctask.c
-C_SOURCES += Ourtasks/gateway_PCtoCAN.c
-C_SOURCES += Ourtasks/morse.c
-C_SOURCES += Ourtasks/payload_extract.c
-C_SOURCES += Ourtasks/MailboxTask.c
-C_SOURCES += Ourtasks/GatewayTask.c
+C_SOURCES += Ourtasks/DMOCchecksum.c
 
 # /* USER CODE END */ 
 
