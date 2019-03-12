@@ -18,10 +18,10 @@ struct FILTERIIRF1
 };
 
 /* *************************************************************************/
-float iir_f1_f(struct FILTERIIRF1* pfc, float);
+float iir_f1_f(struct FILTERIIRF1* pfc, float flt);
 /* @brief	: filter input value 
  * @param	: pfc = Pointer to struct holding fixed parameters and intermediate variables
- * @param	: pval = Pointer to 32b new value input to filter
+ * @param	: flt = float new value input to filter
  * @param	: filter output, given new input
  * *************************************************************************/
 float iir_f1_64b(struct FILTERIIRF1* pfc, uint64_t* pval);
@@ -33,7 +33,7 @@ float iir_f1_64b(struct FILTERIIRF1* pfc, uint64_t* pval);
 float iir_f1_32b(struct FILTERIIRF1* pfc, uint32_t val);
 /* @brief	: filter input value 
  * @param	: pfc = Pointer to struct holding fixed parameters and intermediate variables
- * @param	: pval = Pointer to 32b new value input to filter
+ * @param	: val = 32b new value input to filter
  * @param	: filter output, given new input
  * *************************************************************************/
 #endif

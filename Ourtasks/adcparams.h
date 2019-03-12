@@ -90,27 +90,37 @@ struct ADCVTEMPVREF
 
 };
 
+#define ADCCALIBSIZE 4 // Number of entries
+union ADCCALIB
+{
+	 float    f[ADCCALIBSIZE];
+	uint32_t ui[ADCCALIBSIZE];
+	 int32_t ui[ADCCALIBSIZE];
+};
+
 /* ADC parameters: initialized either from 'adcparamsinit.c' or high flash. */
 struct ADCPARAM
 {
-	struct FILTERCOMPLETE fc; // Filter Complete
 	uint8_t filttype;   // Type of result filtering
 	uint8_t calibtype;  // Calibration type
 	uint8_t comptype;   // Compensation type
 };
 
+/* Intermediate variables for various filter types. */
 union ADCPARAMWORK
 {
 	struct FILTERIIRF1 iir_f1;	// Filter block for iir_f1
 	// TODO Other filter types to be added
 };
 
+/* "Everthing" for one ADC channel. */
 struct ADCCHANNELSTUFF
 {
-	struct ADCPARAM xprms;	// ADC fixed parameters
-	struct ADCSUMS adcsum;  // DMA buffering sums
-	union ADCPARAMWORK fpw; // ADC filter params and variables
-	uint8_t idx;            // ADC reading array index
+	struct ADCPARAM xprms;   // ADC fixed parameters
+	struct ADCSUMS adcsum;   // DMA buffering sums
+	union  ADCCALB cal;      // ADC calibrations
+	union  ADCPARAMWORK fpw; // ADC filter params and variables
+	uint8_t idx;             // ADC reading array index
 };
 
 extern struct ADCCHANNELSTUFF adcchannelstuff[ADC1IDX_ADCSCANSIZE];

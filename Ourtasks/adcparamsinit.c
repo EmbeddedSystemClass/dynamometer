@@ -50,12 +50,13 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacs)
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
 	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT5A; // 5v sensor; Vref w 5v supply reading compensation
 
-	pasc->xprms.fc.[0].f = 0.0     //Offset
-	pasc->xprms.fc.[1].f = 0.123;  //Scale
-	pasc->xprms.fc.skipctr = 4; 	 // Initial readings skip count
+	pasc->xprms.cal.[0].f = 0.0     //Offset
+	pasc->xprms.cal.[1].f = 0.123;  //Scale
 
-	
- 
+	pasc->fpw.skipctr  = 4; 	 // Initial readings skip count
+	pasc->fpw.coef     = 0.1;   // Filter coefficient (< 1.0)
+	pasc->fpw.onemcoef = (1 - pasc->fpw.coef);
+
 	/* Resistor pot connected to 3.3v (Vdd) supply. */
 	pacs = &adcchannelstuff[ADC1IDX_RESISRPOT];
 
@@ -65,6 +66,8 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacs)
 	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT3AT; // 5v sensor; Vref abs w temp
 	pacs->xprms.coef[0].f = 510.0  //Offset
 	pacs->xprms.coef[1].f = 0.123;  //Scale
+
+
 
 
 	/* Total battery current sensor. */
