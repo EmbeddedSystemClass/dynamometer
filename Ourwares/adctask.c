@@ -8,6 +8,7 @@
 #include "cmsis_os.h"
 #include "malloc.h"
 #include "adctask.h"
+#include "adcparams.h"
 
 static struct ADCDMATSKBLK* phd = NULL;
 
@@ -23,7 +24,7 @@ static struct ADCDMATSKBLK* phd = NULL;
  * @param	: notebit2 = unique bit for notification @ end dma buffer
  * @param	: pnoteval = pointer to word receiving notification word from OS
  * @param	: dmact = number of sequences in 1/2 of circular DMA buffer
- * @return	: 
+ * @return	: NULL = fail
  * *************************************************************************/
 /*
    notebit1 notify at the halfway dma buffer point
@@ -42,6 +43,12 @@ struct ADCDMATSKBLK* adctask_init(ADC_HandleTypeDef* phadc,\
 	uint64_t* psum;
 	struct ADCDMATSKBLK* pblk;
 	struct ADCDMATSKBLK* ptmp;
+
+	/* 'adcparams.h' must match what STM32CubeMX set up. */
+	if (ADC1IDX_ADCSCANSIZE != phadc->Init.NbrOfConversion) return NULL;
+
+	/* Initialize params for ADC. */
+	adcparams_init();
 
 	/* length = total number of uint16_t in dma buffer */
 	uint32_t length = dmact * 2 * phadc->Init.NbrOfConversion;

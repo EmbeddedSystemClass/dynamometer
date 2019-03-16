@@ -51,6 +51,21 @@ struct ADCCHANNELSTUFF adcchannelstuff[ADC1IDX_ADCSCANSIZE];
 static uint64_t adc[ADC1IDX_ADCSCANSIZE];
 
 /* *************************************************************************
+ * void adcparams_init(void);
+ *	@brief	: 
+ * *************************************************************************/
+void adcparams_init(ADC_HandleTypeDef* phadc)
+{
+	/* Common to board */
+	adcparamsinit_init_common(&adccommon);
+
+	/* ADC channels. */
+	adcparamsinit_init(adcchannelstuff);
+	return;
+}
+
+
+/* *************************************************************************
  * void adcparams_internal(struct ADCCALCOMMON* pacom, uint64_t* ptemp, uint64_t* pvref, uint16_t sumct);
  *	@brief	: Update values used for compensation from Vref and Temperature
  * @param	: pacom = Pointer calibration parameters for Temperature and Vref

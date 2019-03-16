@@ -1,17 +1,25 @@
 pin_peripheral.txt
 03/11/2019
 
+NOTE: 
+PB1 could be moved to port E freeing ADC12_IN9
+PC4 could be moved to port E freeing ADC12_IN14
+
+
 Control Panel pin/peripherals
+
+* = new or changed
+$ = new or available ADC input
 
  PA
   0 - Blue pushbutton
-  1
+ $1 - ADC123_IN1 spare
   2 - USART2 TX UARTGATE 
   3 - USART2 RX UARTGATE
-  4 LRCK Audio part
- *5 ADC12_IN5
- *6 ADC12_IN6
- *7 ADC12_IN7
+ $4 LRCK Audio part spare(?)
+ $5 ADC12_IN5 - Total battery current
+ $6 ADC12_IN6 - Motor #1 current
+ $7 ADC12_IN7 - Motor #2 current
   8 Output:pushpull - Beeper (TIM1CH1)
   9 USB
  10 USB
@@ -23,7 +31,7 @@ Control Panel pin/peripherals
 
 
  PB
- *0 ADC12_IN8 - 
+ $0 ADC12_IN8 - Speed control pot
   1 Input:pullup - control panel detection pin/jumper
   2
   3 T_SWO
@@ -46,7 +54,7 @@ Control Panel pin/peripherals
   2 ADC12_IN12 - +12 Raw
   3 PDM out onboard part
  *4 ADC12_IN14 - ##### ALSO! CAN driver RS output:pushpull
- *5 ADC12_IN15 -
+ $5 ADC12_IN15 - +5v sensor supply volage
   6 USART6 TX XPRT/UARTGPS
   7 USART6 RX XPRT/UARTGPS
   8

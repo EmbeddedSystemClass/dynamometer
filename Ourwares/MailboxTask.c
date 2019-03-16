@@ -320,7 +320,6 @@ if (pmbxnum == NULL) morse_trap(77); // Debug trap
 				{
 					xTaskNotify(GatewayTaskHandle, (1 << i), eSetBits);
 				}
-
 			}
 		}
   }

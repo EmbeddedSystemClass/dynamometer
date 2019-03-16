@@ -1,6 +1,6 @@
 /******************************************************************************
 * File Name          : adcparams.h
-* Date First Issued  : 03/09/2019
+* Date First Issued  : 03/14/2019
 * Board              : DiscoveryF4
 * Description        : Parameters for ADC app configuration
 *******************************************************************************/
@@ -8,24 +8,29 @@
 #ifndef __ADCPARAMS
 #define __ADCPARAMS
 
-/* ADC reading sequence/array indices                         */
-/* These indices MUST match the hardware ADC scan sequence    */
-#define ADC1IDX_INTERNALTEMP  0   // Internal temperature sensor
-#define ADC1IDX_INTERNALVREF  1   // Internal voltage reference
-#define ADC1IDX_HALLLEVER     2 	// Torque control level
-#define ADC1IDX_RESISRPOT     3 	// Speed control pot
-#define ADC1IDX_CURRENTTOTAL  4   // Current sensor: total battery current
-#define ADC1IDX_CURRENTMOTOR1 5   // Current sensor: motor #1
-#define ADC1IDX_CURRENTMOTOR2 6   // Current sensor: motor #2
+#include "iir_f1.h"
 
-#define ADC1IDX_ADCSCANSIZE  7 // Number ADC channels read
+/* ADC reading sequence/array indices                         */
+/* These indices -=>MUST<= match the hardware ADC scan sequence    */
+#define ADC1IDX_SPARE         0   // PA0 IN0  - spare
+#define ADC1IDX_CURRENTTOTAL  1   // PA5 IN5  - Current sensor: total battery current
+#define ADC1IDX_CURRENTMOTOR1 2   // PA6 IN6  - Current sensor: motor #1
+#define ADC1IDX_CURRENTMOTOR2 3   // PA7 IN7  - Current sensor: motor #2
+#define ADC1IDX_RESISRPOT     4 	 // PB0 IN8  - Speed control pot
+#define ADC1IDX_HALLLEVER     5 	 // PC1 IN11 - Torque control level
+#define ADC1IDX_12VRAWSUPPLY  6   // PC2 IN12 - +12 Raw power to board
+#define ADC1IDX_5VOLTSUPPLY   7   // PC5 IN15 - 5V sensor supply
+#define ADC1IDX_INTERNALTEMP  8   //     IN17 - Internal temperature sensor
+#define ADC1IDX_INTERNALVREF  9   //     IN18 - Internal voltage reference
+
+#define ADC1IDX_ADCSCANSIZE  10 // Number ADC channels read
 
 /* Calibration option.                                    */
 /* Calibration is applied after compensation adjustments. */
-#define ADC1PARAM_CALIBTYPE_RAW   0    // No calibration applied
-#define ADC1PARAM_CALIBTYPE_OFSC  1    // Offset & scale (poly ord 0 & 1)
-#define ADC1PARAM_CALIBTYPE_POLY  2    // Polynomial 2nd ord
-#define ADC1PARAM_CALIBTYPE_POLY  3    // Polynomial 3nd ord
+#define ADC1PARAM_CALIBTYPE_RAW    0    // No calibration applied
+#define ADC1PARAM_CALIBTYPE_OFSC   1    // Offset & scale (poly ord 0 & 1)
+#define ADC1PARAM_CALIBTYPE_POLY2  2    // Polynomial 2nd ord
+#define ADC1PARAM_CALIBTYPE_POLY3  3    // Polynomial 3nd ord
 
 /* Compensation type                                         */
 /* Assumes 5v sensor supply is measured with an ADC channel. */
@@ -37,16 +42,7 @@
 #define ADC1PARAM_COMPTYPE_VOLT5R   5     // 5v sensor, ratiometric using 5v supply reading compensation 
 
 /* Factory internal calibrations. */
-const uint16_t pvref_cal = 
-
-
-/* DMA summation accumulators. */
-struct ADCSUMS
-{
-	struct ADCSUMSU sums;
-	uint16_t maxct;
-	uint16_t ct;
-}
+const uint16_t pvref_cal = 1.21;
 
 /* Summations might want to be more than 32b. */
 union ADCSUMSU
@@ -55,10 +51,17 @@ union ADCSUMSU
 	uint64_t ull;
 };
 
+/* DMA summation accumulators. */
+struct ADCSUMS
+{
+	union ADCSUMSU sums;
+	uint16_t maxct;
+	uint16_t ct;
+};
+
 /* This holds calibration values common to all ADC modules. */
 struct ADCCALCOMMON
 {
-	struct FILTERCOMPLETE fcvdd; // Filter for Vdd
 	// Calibration for external
 	float sensor5vcal;   // The 5v->Vdd divider ratio (e.g. 0.54)
 	// Calibration for internals
@@ -68,7 +71,6 @@ struct ADCCALCOMMON
 	float fvddfilt;      // Vdd: float (volts) filtered
 	uint16_t ivdd;       // Vdd: fixed (mv)
 
-	struct FILTERCOMPLETE fctemp; // Filter for Temperature
 	uint16_t ts_cal1;    // Vtemp: TS_CAL1 converted to float ( 30 deg C 3.3v)
 	uint16_t ts_cal2;    // Vtemp: TS_CAL2 converted to float (110 deg C 3.3v)
 	uint16_t ts_caldiff; // CAL2-CAL1
@@ -90,15 +92,17 @@ struct ADCVTEMPVREF
 
 };
 
-#define ADCCALIBSIZE 4 // Number of entries
+/* Calibration constants */
+#define ADCCALIBSIZE 4 // Number of entries: none - 4th order polynomial
 union ADCCALIB
 {
 	 float    f[ADCCALIBSIZE];
 	uint32_t ui[ADCCALIBSIZE];
-	 int32_t ui[ADCCALIBSIZE];
+	 int32_t  n[ADCCALIBSIZE];
 };
 
-/* ADC parameters: initialized either from 'adcparamsinit.c' or high flash. */
+/* ADC parameters (for one channel): initialized either 
+     from 'adcparamsinit.c' or high flash. */
 struct ADCPARAM
 {
 	uint8_t filttype;   // Type of result filtering
@@ -106,7 +110,7 @@ struct ADCPARAM
 	uint8_t comptype;   // Compensation type
 };
 
-/* Intermediate variables for various filter types. */
+/* Intermediate working variables for various filter types. */
 union ADCPARAMWORK
 {
 	struct FILTERIIRF1 iir_f1;	// Filter block for iir_f1
@@ -118,7 +122,7 @@ struct ADCCHANNELSTUFF
 {
 	struct ADCPARAM xprms;   // ADC fixed parameters
 	struct ADCSUMS adcsum;   // DMA buffering sums
-	union  ADCCALB cal;      // ADC calibrations
+	union  ADCCALIB cal;     // ADC calibrations
 	union  ADCPARAMWORK fpw; // ADC filter params and variables
 	uint8_t idx;             // ADC reading array index
 };

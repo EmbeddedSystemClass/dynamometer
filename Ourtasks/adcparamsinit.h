@@ -25,8 +25,9 @@ void adcparamsinit_init_common(struct ADCCALCOMMON* padccommon);
 /*	@brief	: Initialize struct with parameters common to all ADC for this board
  * @param	: padccommon = pointer to struct 
  * *************************************************************************/
-void adcparamsinit_init(struct ADCPARAMS* prms);
-/*	@brief	: Load struct that holds the basic parameters for the ADC with values
+void adcparamsinit_init(struct ADCCHANNELSTUFF* pacs);
+/*	@brief	: Load structs for compensation, calibration and filtering all ADC channels
+ * @param	: pacs = Pointer to struct "everything" for this ADC module
  * *************************************************************************/
 
 #endif

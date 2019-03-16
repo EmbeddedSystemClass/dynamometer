@@ -61,7 +61,7 @@ void StartADCTask(void* argument)
 
 	/* Get buffers, "our" control block, and start ADC/DMA running. */
 	struct ADCDMATSKBLK* pblk = adctask_init(&hadc1,TSK02BIT02,TSK02BIT03,&noteval,ADCSEQNUM);
-	if (pblk == NULL) {HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15,GPIO_PIN_SET); morse_trap(15);}
+	if (pblk == NULL) {morse_trap(15);}
 
 	uint64_t* psum;
 
