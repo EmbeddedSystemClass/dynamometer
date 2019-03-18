@@ -46,21 +46,23 @@ Vdd = 3300*(*VREFINT_CAL_ADDR)/ADC_raw;
 struct ADCCALCOMMON adcommon;
 
 /* ADC1 parameters, calibrations, filtering, ... */
-struct ADCCHANNELSTUFF adcchannelstuff[ADC1IDX_ADCSCANSIZE];
+struct ADCCHANNELSTUFF adc1channelstuff[ADC1IDX_ADCSCANSIZE];
 
-static uint64_t adc[ADC1IDX_ADCSCANSIZE];
+/* Raw and calibrated ADC1 readings. */
+struct ADC1DATA adc1data[[ADC1DMANUMSEQ];
 
 /* *************************************************************************
  * void adcparams_init(void);
- *	@brief	: 
+ *	@brief	: Copy parameters into structs
+ * NOTE: => ASSUMES ADC1 ONLY <==
  * *************************************************************************/
 void adcparams_init(ADC_HandleTypeDef* phadc)
 {
 	/* Common to board */
 	adcparamsinit_init_common(&adccommon);
 
-	/* ADC channels. */
-	adcparamsinit_init(adcchannelstuff);
+	/* Load parameter values for ADC channels. */
+	adcparamsinit_init(adc1channelstuff);
 	return;
 }
 

@@ -10,6 +10,8 @@
 
 #include "iir_f1.h"
 
+#define ADC1DMANUMSEQ 16 // Number of DMA scan sequences in 1/2 DMA buffer
+
 /* ADC reading sequence/array indices                         */
 /* These indices -=>MUST<= match the hardware ADC scan sequence    */
 #define ADC1IDX_SPARE         0   // PA0 IN0  - spare
@@ -44,19 +46,12 @@
 /* Factory internal calibrations. */
 const uint16_t pvref_cal = 1.21;
 
-/* Summations might want to be more than 32b. */
-union ADCSUMSU
+/* Calibrated ADC reading. */
+union ADCCALREADING
 {
-	uint32_t ui[2];
-	uint64_t ull;
-};
-
-/* DMA summation accumulators. */
-struct ADCSUMS
-{
-	union ADCSUMSU sums;
-	uint16_t maxct;
-	uint16_t ct;
+	uint32_t ui;
+	 int32_t  n;
+	float     f;
 };
 
 /* This holds calibration values common to all ADC modules. */
@@ -121,12 +116,26 @@ union ADCPARAMWORK
 struct ADCCHANNELSTUFF
 {
 	struct ADCPARAM xprms;   // ADC fixed parameters
-	struct ADCSUMS adcsum;   // DMA buffering sums
 	union  ADCCALIB cal;     // ADC calibrations
-	union  ADCPARAMWORK fpw; // ADC filter params and variables
-	uint8_t idx;             // ADC reading array index
+	union  ADCPARAMWORK fpw; // ADC filter params and working variables
+	uint32_t ctr;            // Update counter
 };
 
-extern struct ADCCHANNELSTUFF adcchannelstuff[ADC1IDX_ADCSCANSIZE];
+/* struct allows pointer to access raw and calibrated ADC1 data. */
+struct ADC1DATA
+{
+  uint32_t adcs1sum[ADC1DMANUMSEQ]; // Sum of 1/2 DMA buffer for each channel
+  union ADCCALREADING adc1calreading[ADC1DMANUMSEQ]; // Calibrated readings
+  uint32_t ctr; // Running count of updates.
+};
+
+/* *************************************************************************/
+void adcparams_init(void);
+/*	@brief	: Copy parameters into structs
+ * NOTE: => ASSUMES ADC1 ONLY <==
+ * *************************************************************************/
+
+/* Raw and calibrated ADC1 readings. */
+extern struct ADC1DATA adc1data[[ADC1DMANUMSEQ];
 
 #endif

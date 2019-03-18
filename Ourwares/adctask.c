@@ -10,20 +10,19 @@
 #include "adctask.h"
 #include "adcparams.h"
 
-static struct ADCDMATSKBLK* phd = NULL;
+
+struct ADCDMATSKBLK adc1dmatskblk[ADCNUM];
 
 /* *************************************************************************
- *  adctask_init(ADC_HandleTypeDef* phadc,\
-	uint32_t  notebit1,\
-	uint32_t  notebit2,\
-	uint32_t* pnoteval,\
-	uint16_t  dmact);
- *	@brief	: Setup circular line buffers this uart
- * @param	: phadc = pointer to ADC control block
+ * struct ADCDMATSKBLK* adctask_init(ADC_HandleTypeDef* phadc,\
+	 uint32_t  notebit1,\
+	 uint32_t  notebit2,\
+	 uint32_t* pnoteval);
+ *	@brief	: Setup ADC DMA buffers and control block
+ * @param	: phadc = pointer to 'MX ADC control block
  * @param	: notebit1 = unique bit for notification @ 1/2 dma buffer
  * @param	: notebit2 = unique bit for notification @ end dma buffer
  * @param	: pnoteval = pointer to word receiving notification word from OS
- * @param	: dmact = number of sequences in 1/2 of circular DMA buffer
  * @return	: NULL = fail
  * *************************************************************************/
 /*
@@ -36,50 +35,30 @@ static struct ADCDMATSKBLK* phd = NULL;
 struct ADCDMATSKBLK* adctask_init(ADC_HandleTypeDef* phadc,\
 	uint32_t  notebit1,\
 	uint32_t  notebit2,\
-	uint32_t* pnoteval,\
-	uint16_t  dmact)
+	uint32_t* pnoteval)
 {
 	uint16_t* pdma;
-	uint64_t* psum;
-	struct ADCDMATSKBLK* pblk;
+	uint32_t* psum;
+	struct ADCDMATSKBLK* pblk = &adc1dmatskblk[0]; // ADC1 only for now
 	struct ADCDMATSKBLK* ptmp;
 
-	/* 'adcparams.h' must match what STM32CubeMX set up. */
+	/* 'adcparams.h' MUST match what STM32CubeMX set up. */
 	if (ADC1IDX_ADCSCANSIZE != phadc->Init.NbrOfConversion) return NULL;
+
+	/* ADC DMA summation length must match 1/2 DMA buffer sizing. */
+	if (ADCFASTSUM16SIZE != ADC1DMANUMSEQ) return NULL;
+
+	/* length = total number of uint16_t in dma buffer */
+	uint32_t length = ADC1DMANUMSEQ * 2 * phadc->Init.NbrOfConversion;
 
 	/* Initialize params for ADC. */
 	adcparams_init();
 
-	/* length = total number of uint16_t in dma buffer */
-	uint32_t length = dmact * 2 * phadc->Init.NbrOfConversion;
-
 taskENTER_CRITICAL();
-
-	pblk = phd;
-	if (pblk == NULL)
-	{ // Here, first block
-		pblk = (struct ADCDMATSKBLK*)calloc(1, sizeof(struct ADCDMATSKBLK));
-		if (pblk == NULL){taskEXIT_CRITICAL();return NULL;}
-		pblk->pnext = pblk; // End of list
-		phd = pblk;
-	}
-	else
-	{ // Here, add block to list
-		ptmp = phd;
-		while(ptmp->pnext != ptmp) ptmp++;
-		pblk = (struct ADCDMATSKBLK*)calloc(1, sizeof(struct ADCDMATSKBLK));
-		if (pblk == NULL){taskEXIT_CRITICAL();return NULL;}
-		pblk->pnext = pblk; // End of list
-		ptmp->pnext = pblk; // Preceding block points to new block
-	}
 
 	/* Get dma buffer allocated */
 	pdma = (uint16_t*)calloc(length, sizeof(uint16_t));
 	if (pdma == NULL) {taskEXIT_CRITICAL();return NULL;}
-
-	/* Get memory for summed readings.  One for each ADC input.  */
-	psum = (uint64_t*)calloc(phadc->Init.NbrOfConversion, sizeof(uint64_t));
-	if (psum == NULL) {taskEXIT_CRITICAL();return NULL;}
 
 taskEXIT_CRITICAL();
 
@@ -87,15 +66,16 @@ taskEXIT_CRITICAL();
 /* The following reproduced for convenience--
 struct ADCDMATSKBLK
 {
-	ADC_HandleTypeDef* phadc;
-	uint32_t  notebit1;
-	uint32_t  notebit2;
-	uint32_t* pnoteval;
-	uint16_t* pdma1;
-	uint16_t* pdma2;
+	struct ADCDMATSKBLK* pnext;
+	ADC_HandleTypeDef* phadc; // Pointer to 'MX adc control block
+	uint32_t  notebit1; // Notification bit for dma half complete interrupt
+	uint32_t  notebit2; // Notification bit for dma complete interrupt
+	uint32_t* pnoteval; // Pointer to notification word
+	uint16_t* pdma1;    // Pointer to first half of dma buffer
+	uint16_t* pdma2;    // Pointer to second half of dma buffer
 	osThreadId adctaskHandle;
-	uint64_t* psum;
-	uint16_t  dmact;
+	uint32_t* psum;     // Pointer summed 1/2 dma buffer
+	uint16_t  dmact;    // Number of sequences in 1/2 dma buffer
 };
 
 */
@@ -105,7 +85,7 @@ struct ADCDMATSKBLK
 	pblk->pnoteval = pnoteval;
 	pblk->dmact    = dmact;
 	pblk->pdma1    = pdma;
-	pblk->pdma2    = pdma + (dmact * phadc->Init.NbrOfConversion);
+	pblk->pdma2    = pdma + (ADC1DMANUMSEQ * phadc->Init.NbrOfConversion);
 	pblk->adctaskHandle = xTaskGetCurrentTaskHandle();
 	pblk->psum     = psum;
 
@@ -121,45 +101,7 @@ struct ADCDMATSKBLK
 	HAL_ADC_Start_DMA(pblk->phadc, (uint32_t*)pblk->pdma1, length);
 	return pblk;
 }
-/* *************************************************************************
- * uint64_t* adctask_sum(struct ADCDMATSKBLK* pblk);
- *	@brief	: sum 1/2 of the dma buffer for each ADC in the sequence
- * @param	: pblk = pointer to our control block with all the info
- * *************************************************************************/
-uint64_t* adctask_sum(struct ADCDMATSKBLK* pblk)
-{
-	uint16_t* p;	
-	uint16_t* pdat;
-	uint32_t n;	
-	int i,j;
 
-	/* Was notification an ADC DMA callback? */
-	if (((pblk->notebit1 | pblk->notebit2) & *pblk->pnoteval) == 0) return NULL;
-
-	/* Select DMA buffer half just completed. */
-	if ((pblk->notebit1 & *pblk->pnoteval) != 0)
-	{
-		p = pblk->pdma1;
-	}
-	else
-	{
-		p = pblk->pdma2;	
-	}
-
-	/* Sum dma readings from 1/2 dma buffer. */
-	n = pblk->phadc->Init.NbrOfConversion;
-	for (i = 0; i < n; i++) // Step thru ADC seq
-	{
-		pdat = (p + i); // Pt to ADC for 1st sequence
-		*(pblk->psum + i) = 0;
-		for (j = 0; j < pblk->dmact; j++) // Step thru buffer
-		{
-			*(pblk->psum + i) += *pdat;
-			pdat += n; // Step to next sequence
-		}
-	}
-	return pblk->psum;
-}
 /* #######################################################################
    ADC DMA interrupt callbacks
    ####################################################################### */
@@ -174,15 +116,10 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 Ddma1 += 1;
 
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	struct ADCDMATSKBLK* ptmp;
-	ptmp = phd;
-	/* Look up this ADC control block from linked list */
-	do
-	{
-		if (ptmp->phadc == hadc) break;
-		ptmp++;
-	} while (ptmp->pnext != ptmp);
+	struct ADCDMATSKBLK* ptmp = &adc1dmatskblk[0];
+
 	/* Trigger Recieve Task to poll dma uarts */
+	if( ptmp->adctaskHandle == NULL) return; // Skip task has not been created
 	xTaskNotifyFromISR(ptmp->adctaskHandle, 
 		ptmp->notebit1,	/* 'or' bit assigned to buffer to notification value. */
 		eSetBits,      /* Set 'or' option */
@@ -200,14 +137,10 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 Ddma2 += 1;
 
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	struct ADCDMATSKBLK* ptmp;
-	ptmp = phd;
-	do
-	{
-		if (ptmp->phadc == hadc) break;
-		ptmp++;
-	} while (ptmp->pnext != ptmp);
+	struct ADCDMATSKBLK* ptmp = &adc1dmatskblk[0];
+
 	/* Trigger Recieve Task to poll dma uarts */
+	if( ptmp->adctaskHandle == NULL) return; // Skip task has not been created
 	xTaskNotifyFromISR(ptmp->adctaskHandle, 
 		ptmp->notebit2,	/* 'or' bit assigned to buffer to notification value. */
 		eSetBits,      /* Set 'or' option */
@@ -216,5 +149,4 @@ Ddma2 += 1;
 	portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
 	return;
 }
-
 

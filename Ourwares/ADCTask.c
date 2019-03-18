@@ -19,22 +19,6 @@ static uint16_t* adcbuffptr;
 osThreadId ADCTaskHandle;
 
 /* *************************************************************************
- * void* xADCTask_init(void);
- * @brief	: Initialize handling of ADC readings
- * @param	: 
- * @return	:
- * *************************************************************************/
-	#define TSK02BIT02	(1 << 0)  // Task notification bit for ADC dma 1st 1/2 (adctask.c)
-	#define TSK02BIT03	(1 << 1)  // Task notification bit for ADC dma end (adctask.c)
-
-void* xADCTask_init(void)
-{
-
-
-	return 1;
-}
-
-/* *************************************************************************
  * osThreadId xADCTaskCreate(uint32_t taskpriority);
  * @brief	: Create task; task handle created is global for all to enjoy!
  * @param	: taskpriority = Task priority (just as it says!)
@@ -53,6 +37,11 @@ osThreadId xADCTaskCreate(uint32_t taskpriority)
  * *************************************************************************/
 void StartADCTask(void* argument)
 {
+	#define TSK02BIT02	(1 << 0)  // Task notification bit for ADC dma 1st 1/2 (adctask.c)
+	#define TSK02BIT03	(1 << 1)  // Task notification bit for ADC dma end (adctask.c)
+
+	uint16_t* pdma;
+
 	/* A notification copies the internal notification word to this. */
 	uint32_t noteval = 0;    // Receives notification word upon an API notify
 
@@ -60,10 +49,8 @@ void StartADCTask(void* argument)
 	uint32_t noteused = 0;
 
 	/* Get buffers, "our" control block, and start ADC/DMA running. */
-	struct ADCDMATSKBLK* pblk = adctask_init(&hadc1,TSK02BIT02,TSK02BIT03,&noteval,ADCSEQNUM);
+	struct ADCDMATSKBLK* pblk = adctask_init(&hadc1,TSK02BIT02,TSK02BIT03,&noteval);
 	if (pblk == NULL) {morse_trap(15);}
-
-	uint64_t* psum;
 
   /* Infinite loop */
   for(;;)
@@ -75,10 +62,22 @@ void StartADCTask(void* argument)
 		/* We handled one, or both, noteval bits */
 		noteused |= (pblk->notebit1 | pblk->notebit2);
 
-		/* Sum the readings 1/2 of DMA buffer to an array. */
-		psum = adctask_sum(pblk);	// Sum 1/2 dma buffer 
+		if (noteval & TSK02BIT02)
+		{
+			pdma = &adc1dmatskblk[0].pdma1;
+		}
+		else
+		{
+			pdma = &adc1dmatskblk[0].pdma2;
+		}
 
-		adcparams_internal((psum+ADC1IDX_INTERNALTEMP),(psum+ADC1IDX_INTERNALVREF));
+		/* Sum the readings 1/2 of DMA buffer to an array. */
+		adcfastsum(&adc1data[[0].adcs1sum[0], pdma);
+
+		/* Compute internal reference and temperature adjustments. */
+		adcparams_internal(&adc1data[[0].adcs1sum[ADC1IDX_INTERNALTEMP],&adc1data[[0].adcs1sum[ADC1IDX_INTERNALVREF]);
+
+		/* Computer compensated, calibrated, and filtered readings. */
 		
   }
 }

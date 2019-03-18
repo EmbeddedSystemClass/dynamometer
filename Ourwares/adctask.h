@@ -12,6 +12,8 @@
 #include "cmsis_os.h"
 #include "stm32f4xx_hal.h"
 
+#define ADCNUM 3  // Number of ADC modules
+
 /* Augment 'MX adc control block for dma buffering and summing */
 struct ADCDMATSKBLK
 {
@@ -22,29 +24,23 @@ struct ADCDMATSKBLK
 	uint32_t* pnoteval; // Pointer to notification word
 	uint16_t* pdma1;    // Pointer to first half of dma buffer
 	uint16_t* pdma2;    // Pointer to second half of dma buffer
-	osThreadId adctaskHandle;
-	uint64_t* psum;     // Pointer summed 1/2 dma buffer
-	uint16_t  dmact;    // Number of sequences in 1/2 dma buffer
+	osThreadId adctaskHandle; // Task to notify
 };
 
 /* *************************************************************************/
 struct ADCDMATSKBLK* adctask_init(ADC_HandleTypeDef* phadc,\
 	uint32_t  notebit1,\
 	uint32_t  notebit2,\
-	uint32_t* pnoteval,\
-	uint16_t  dmact);
+	uint32_t* pnoteval);
 /*	@brief	: Setup circular line buffers this uart
  * @param	: phadc = pointer to ADC control block
  * @param	: notebit1 = unique bit for notification @ 1/2 dma buffer
  * @param	: notebit2 = unique bit for notification @ end dma buffer
  * @param	: pnoteval = pointer to word receiving notification word from OS
- * @param	: dmact = number of sequences in 1/2 of circular DMA buffer
- * @return	: 
+ * @return	: NULL = fail
  * *************************************************************************/
-uint64_t* adctask_sum(struct ADCDMATSKBLK* pblk);
-/*	@brief	: sum 1/2 of the dma buffer for each ADC in the sequence
- * @param	: pblk = pointer to our control block with all the info
- * *************************************************************************/
+
+extern struct ADCDMATSKBLK adc1dmatskblk[ADCNUM];
 
 #endif
 

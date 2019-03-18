@@ -64,10 +64,10 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacs)
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;        // Single pole IIR
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
 	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT3AT; // 5v sensor; Vref abs w temp
-	pacs->xprms.coef[0].f = 510.0  //Offset
+	pacs->xprms.coef[0].f = 510.0   //Offset
 	pacs->xprms.coef[1].f = 0.123;  //Scale
 
-	pasc->xprms.cal.[0].f = 0.0     // Offset
+	pasc->xprms.cal.[0].f = 0.0           // Offset
 	pasc->xprms.cal.[1].f = (100.0/4095); // Scale
 
 	pasc->fpw.skipctr  = 4; 	 // Initial readings skip count
