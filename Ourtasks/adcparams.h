@@ -10,7 +10,8 @@
 
 #include "iir_f1.h"
 
-#define ADC1DMANUMSEQ 16 // Number of DMA scan sequences in 1/2 DMA buffer
+#define ADC1DMANUMSEQ        16 // Number of DMA scan sequences in 1/2 DMA buffer
+#define ADC1IDX_ADCSCANSIZE  10 // Number ADC channels read
 
 /* ADC reading sequence/array indices                         */
 /* These indices -=>MUST<= match the hardware ADC scan sequence    */
@@ -24,8 +25,6 @@
 #define ADC1IDX_5VOLTSUPPLY   7   // PC5 IN15 - 5V sensor supply
 #define ADC1IDX_INTERNALTEMP  8   //     IN17 - Internal temperature sensor
 #define ADC1IDX_INTERNALVREF  9   //     IN18 - Internal voltage reference
-
-#define ADC1IDX_ADCSCANSIZE  10 // Number ADC channels read
 
 /* Calibration option.                                    */
 /* Calibration is applied after compensation adjustments. */
@@ -43,8 +42,10 @@
 #define ADC1PARAM_COMPTYPE_VOLT5AT  4     // "5A" above with temperature comp applied to Vref
 #define ADC1PARAM_COMPTYPE_VOLT5R   5     // 5v sensor, ratiometric using 5v supply reading compensation 
 
-/* Factory internal calibrations. */
-const uint16_t pvref_cal = 1.21;
+/* Filter type codes */
+#define ADCFILTERTYPE_NONE		0  // Skip filtering
+#define ADCFILTERTYPE_IIR1		1  // IIR single pole
+#define ADCFILTERTYPE_IIR2		2  // IIR second order
 
 /* Calibrated ADC reading. */
 union ADCCALREADING
@@ -65,14 +66,17 @@ struct ADCCALCOMMON
 	float fvdd;          // Vdd: float (volts)
 	float fvddfilt;      // Vdd: float (volts) filtered
 	uint16_t ivdd;       // Vdd: fixed (mv)
+	uint16_t ts_vref;
 
-	uint16_t ts_cal1;    // Vtemp: TS_CAL1 converted to float ( 30 deg C 3.3v)
-	uint16_t ts_cal2;    // Vtemp: TS_CAL2 converted to float (110 deg C 3.3v)
-	uint16_t ts_caldiff; // CAL2-CAL1
+	float ts_cal1;    // Vtemp: TS_CAL1 converted to float ( 30 deg C 3.3v)
+	float ts_cal2;    // Vtemp: TS_CAL2 converted to float (110 deg C 3.3v)
+	float ts_caldiff; // CAL2-CAL1
+	float ts_80caldiff;
 	float v25;           // Vtemp: 25 deg C (0.76v typ)
    float slope;         // Vtemp: mv/degC 
 	float offset;        // Vtemp: offset
- 	uint32_t sumct;      // Number of summations of ADC readings before floating
+	float degC;          // Temperature: degrees C
+ 	uint32_t dmact;      // DMA interrupt running counter
 };
 
 struct ADCVTEMPVREF
@@ -124,9 +128,9 @@ struct ADCCHANNELSTUFF
 /* struct allows pointer to access raw and calibrated ADC1 data. */
 struct ADC1DATA
 {
-  uint32_t adcs1sum[ADC1DMANUMSEQ]; // Sum of 1/2 DMA buffer for each channel
-  union ADCCALREADING adc1calreading[ADC1DMANUMSEQ]; // Calibrated readings
+  union ADCCALREADING adc1calreading[ADC1IDX_ADCSCANSIZE]; // Calibrated readings
   uint32_t ctr; // Running count of updates.
+  uint16_t adcs1sum[ADC1IDX_ADCSCANSIZE]; // Sum of 1/2 DMA buffer for each channel
 };
 
 /* *************************************************************************/
@@ -134,8 +138,17 @@ void adcparams_init(void);
 /*	@brief	: Copy parameters into structs
  * NOTE: => ASSUMES ADC1 ONLY <==
  * *************************************************************************/
+void adcparams_internal(struct ADCCALCOMMON* pacom, uint16_t* ptemp, uint16_t* pvref);
+/*	@brief	: Update values used for compensation from Vref and Temperature
+ * @param	: pacom = Pointer calibration parameters for Temperature and Vref
+ * @param	: ptemp = Pointer to summed DMA reading
+ * @param	: pvref = Pointer to summed Vref reading
+ * *************************************************************************/
 
 /* Raw and calibrated ADC1 readings. */
-extern struct ADC1DATA adc1data[[ADC1DMANUMSEQ];
+extern struct ADC1DATA adc1data;
+
+/* Calibration values common to all ADC modules. */
+extern struct ADCCALCOMMON adcommon;
 
 #endif

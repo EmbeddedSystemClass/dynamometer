@@ -8,6 +8,7 @@
 Not thread safe.
 */
 #include "adcparams.h"
+#include "adcparamsinit.h"
 
 
 /*
@@ -40,7 +41,12 @@ sensor calibration.
 
 
 Vdd = 3300*(*VREFINT_CAL_ADDR)/ADC_raw;
+
+Temp(degree) = (V_sense - V_25)/Avg_slope + 25
+
 */
+
+#define VREFINT_CAL_ADDR 
 
 /* Calibration values common to all ADC modules. */
 struct ADCCALCOMMON adcommon;
@@ -49,42 +55,45 @@ struct ADCCALCOMMON adcommon;
 struct ADCCHANNELSTUFF adc1channelstuff[ADC1IDX_ADCSCANSIZE];
 
 /* Raw and calibrated ADC1 readings. */
-struct ADC1DATA adc1data[[ADC1DMANUMSEQ];
+struct ADC1DATA adc1data;
 
 /* *************************************************************************
  * void adcparams_init(void);
  *	@brief	: Copy parameters into structs
  * NOTE: => ASSUMES ADC1 ONLY <==
  * *************************************************************************/
-void adcparams_init(ADC_HandleTypeDef* phadc)
+void adcparams_init(void)
 {
 	/* Common to board */
-	adcparamsinit_init_common(&adccommon);
+	adcparamsinit_init_common(&adcommon);
 
 	/* Load parameter values for ADC channels. */
 	adcparamsinit_init(adc1channelstuff);
 	return;
 }
 
-
 /* *************************************************************************
- * void adcparams_internal(struct ADCCALCOMMON* pacom, uint64_t* ptemp, uint64_t* pvref, uint16_t sumct);
+ * void adcparams_internal(struct ADCCALCOMMON* pacom, uint16_t* ptemp, uint316_t* pvref);
  *	@brief	: Update values used for compensation from Vref and Temperature
  * @param	: pacom = Pointer calibration parameters for Temperature and Vref
  * @param	: ptemp = Pointer to summed DMA reading
  * @param	: pvref = Pointer to summed Vref reading
- * @param	: sumct = number of readings in DMA 1/2 buffer sum
  * *************************************************************************/
-void adcparams_internal(struct ADCCALCOMMON* pacom, uint64_t* ptemp, uint64_t* pvref, uint16_t sumct)
+void adcparams_internal(struct ADCCALCOMMON* pacom, uint16_t* ptemp, uint16_t* pvref)
 {
-	uint32_t itmp;
-	float 	ftmp;
+/*
+#define PVREFINT_CAL ((uint16_t*)0x1FFF7A2A))  // Pointer to factory calibration: Vref
+#define PTS_CAL1     ((uint16_t*)0x1FFF7A2C))  // Pointer to factory calibration: Vtemp
+#define PTS_CAL2     ((uint16_t*)0x1FFF7A2E))  // Pointer to factory calibration: Vtemp
+*/
 	
-	pacom->fvdd  = *pvref;
-	pacom->fvdd = (pacom->fvdd * VREFCALVOLTF) / sumct;
-	pacom->fvddfilt = filter_iir1(pacom-> ???,pacom->fvdd);
+	pacom->fvdd  = (3.300 * (float)ADC1DMANUMSEQ * (*PVREFINT_CAL)) /  (float)(*pvref);
+	
+// Temp = 80 ⁄ ( TS_CAL2 – TS_CAL1 ) × ( ValTS – TS_CAL1 ) + 30
+	pacom->degC = pacom->ts_80caldiff * (float)(*ptemp) - pacom->ts_cal1 + 30;
 
 
+	return;
 }
 
 

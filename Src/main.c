@@ -73,6 +73,8 @@
 #include "SerialTaskReceive.h"
 #include "yscanf.h"
 #include "adctask.h"
+#include "ADCTask.h"
+#include "adcparams.h"
 #include "gateway_PCtoCAN.h"
 #include "morse.h"
 #include "MailboxTask.h"
@@ -128,6 +130,7 @@ uint8_t canflag2;
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 CAN_HandleTypeDef hcan1;
 CAN_HandleTypeDef hcan2;
@@ -140,6 +143,8 @@ DMA_HandleTypeDef hdma_usart6_rx;
 DMA_HandleTypeDef hdma_usart6_tx;
 
 osThreadId defaultTaskHandle;
+osTimerId defaultTaskTimerHandle;
+osTimerId defautTaskTimer01Handle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -154,6 +159,8 @@ static void MX_CAN1_Init(void);
 static void MX_CAN2_Init(void);
 static void MX_ADC1_Init(void);
 void StartDefaultTask(void const * argument);
+void CallbackdefaultTaskTimer(void const * argument);
+void CallbackdefaultTaskTimer01(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -219,13 +226,28 @@ DiscoveryF4 LEDs --
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
 
+  /* Create the timer(s) */
+  /* definition and creation of defaultTaskTimer */
+  osTimerDef(defaultTaskTimer, CallbackdefaultTaskTimer);
+  defaultTaskTimerHandle = osTimerCreate(osTimer(defaultTaskTimer), osTimerPeriodic, NULL);
+
+  /* definition and creation of defautTaskTimer01 */
+  osTimerDef(defautTaskTimer01, CallbackdefaultTaskTimer01);
+  defautTaskTimer01Handle = osTimerCreate(osTimer(defautTaskTimer01), osTimerPeriodic, NULL);
+
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
+
+	/* defaultTask timer for pacing display of stack usages. */
+	ret = xTimerChangePeriod( defaultTaskTimerHandle  ,pdMS_TO_TICKS(5000),0);
+	/* defaultTask timer for pacing ADC monitoring. */
+	ret = xTimerChangePeriod( defautTaskTimer01Handle,pdMS_TO_TICKS(1000),0);
+
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 384);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -318,6 +340,10 @@ DiscoveryF4 LEDs --
 	/* Start CANs */
 	HAL_CAN_Start(&hcan1); // CAN1
 //	HAL_CAN_Start(&hcan2); // CAN2
+
+	/* ADC summing, calibration, etc. */
+	xADCTaskCreate(1);
+
 /* =================================================== */
 
   /* USER CODE END RTOS_THREADS */
@@ -660,11 +686,14 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 5, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
   /* DMA1_Stream6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
   /* DMA2_Stream1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
@@ -721,6 +750,15 @@ void StartDefaultTask(void const * argument)
   /* USER CODE BEGIN 5 */
 	int i;
 
+	#define DEFAULTTSKBIT00	(1 << 0)  // Task notification bit for sw timer: stackusage
+	#define DEFAULTTSKBIT01	(1 << 1)  // Task notification bit for sw timer: something else
+
+	/* A notification copies the internal notification word to this. */
+	uint32_t noteval = 0;    // Receives notification word upon an API notify
+
+	/* notification bits processed after a 'Wait. */
+	uint32_t noteused = 0;
+
 	struct SERIALSENDTASKBCB* pbuf1 = getserialbuf(&huart6,96);
 	if (pbuf1 == NULL) morse_trap(11);
 
@@ -742,35 +780,71 @@ void StartDefaultTask(void const * argument)
 
 HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 
+	uint32_t dmact_prev = adcommon.dmact;
+
 #define LOOPDELAYTICKS ((64*8)*5)	// 5 sec Loop delay (512 Hz tick rate)
 	for ( ;; )
 	{
-		osDelay(LOOPDELAYTICKS);
+		xTaskNotifyWait(noteused, 0, &noteval, portMAX_DELAY);
+		noteused = 0;
+		if ((noteval & DEFAULTTSKBIT00) != 0)
+		{
+			noteused |= DEFAULTTSKBIT00;
 
+			/* Display the amount of unused stack space for tasks. */
+			yprintf(&pbuf2,"\n\r%4i Unused Task stack space--", ctr++);
+			stackwatermark_show(defaultTaskHandle,&pbuf2,"defaultTask--");
+			stackwatermark_show(SerialTaskHandle ,&pbuf2,"SerialTask---");
+			stackwatermark_show(CanTxTaskHandle  ,&pbuf2,"CanTxTask----");
+	//		stackwatermark_show(CanRxTaskHandle  ,&pbuf2,"CanRxTask----");
+			stackwatermark_show(MailboxTaskHandle,&pbuf2,"MailboxTask--");
+			stackwatermark_show(SerialTaskReceiveHandle,&pbuf2,"SerialRcvTask");
+
+			/* Heap usage (and test fp woking. */
+			heapsize = xPortGetFreeHeapSize();
+			yprintf(&pbuf2,"\n\rGetFreeHeapSize: total: %i used %i %3.1f%% free: %i",configTOTAL_HEAP_SIZE, heapsize,\
+				100.0*(float)heapsize/configTOTAL_HEAP_SIZE,(configTOTAL_HEAP_SIZE-heapsize));
+
+			/* ==== CAN MSG sending test ===== */
+			/* Place test CAN msg to send on queue in a burst. */
+			/* Note: an odd makes the LED flash since it toggles on each msg. */
+			for (i = 0; i < 7; i++)
+				xQueueSendToBack(CanTxQHandle,&testtx,portMAX_DELAY);
+		}
+		if ((noteval & DEFAULTTSKBIT01) != 0)
+		{
+			noteused |= DEFAULTTSKBIT01;
 		HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
-
-		/* Display the amount of unused stack space for tasks. */
-		yprintf(&pbuf2,"\n\r%4i Unused Task stack space--", ctr++);
-		stackwatermark_show(defaultTaskHandle,&pbuf2,"defaultTask--");
-		stackwatermark_show(SerialTaskHandle ,&pbuf2,"SerialTask---");
-		stackwatermark_show(CanTxTaskHandle  ,&pbuf2,"CanTxTask----");
-//		stackwatermark_show(CanRxTaskHandle  ,&pbuf2,"CanRxTask----");
-		stackwatermark_show(MailboxTaskHandle,&pbuf2,"MailboxTask--");
-		stackwatermark_show(SerialTaskReceiveHandle,&pbuf2,"SerialRcvTask");
-
-		/* Heap usage (and test fp woking. */
-		heapsize = xPortGetFreeHeapSize();
-		yprintf(&pbuf2,"\n\rGetFreeHeapSize: total: %i used %i %3.1f%% free: %i",configTOTAL_HEAP_SIZE, heapsize,\
-			100.0*(float)heapsize/configTOTAL_HEAP_SIZE,(configTOTAL_HEAP_SIZE-heapsize));
-
-	/* ==== CAN MSG sending test ===== */
-	/* Place test CAN msg to send on queue in a burst. */
-	/* Note: an odd makes the LED flash since it toggles on each msg. */
-	for (i = 0; i < 7; i++)
-		xQueueSendToBack(CanTxQHandle,&testtx,portMAX_DELAY);
-
+			yprintf(&pbuf2,"\n\rADC: Vdd: %6.3f Temp: %6.1f  %i",adcommon.fvdd,adcommon.degC, adcommon.dmact-dmact_prev);
+			dmact_prev = adcommon.dmact;
+		}	
 	}
   /* USER CODE END 5 */ 
+}
+
+/* CallbackdefaultTaskTimer function */
+void CallbackdefaultTaskTimer(void const * argument)
+{
+  /* USER CODE BEGIN CallbackdefaultTaskTimer */
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	xTaskNotifyFromISR(defaultTaskHandle, 
+		DEFAULTTSKBIT00,	/* 'or' bit assigned to buffer to notification value. */
+		eSetBits,      /* Set 'or' option */
+		&xHigherPriorityTaskWoken ); 
+
+  /* USER CODE END CallbackdefaultTaskTimer */
+}
+
+/* CallbackdefaultTaskTimer01 function */
+void CallbackdefaultTaskTimer01(void const * argument)
+{
+  /* USER CODE BEGIN CallbackdefaultTaskTimer01 */
+  	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	xTaskNotifyFromISR(defaultTaskHandle, 
+		DEFAULTTSKBIT01,	/* 'or' bit assigned to buffer to notification value. */
+		eSetBits,      /* Set 'or' option */
+		&xHigherPriorityTaskWoken ); 
+  /* USER CODE END CallbackdefaultTaskTimer01 */
 }
 
 /**

@@ -1,5 +1,5 @@
 /******************************************************************************
-* File Name          : adcTask.h
+* File Name          : adctask.h
 * Date First Issued  : 02/01/2019
 * Description        : Handle ADC w DMA using FreeRTOS/ST HAL within a task
 *******************************************************************************/
@@ -41,6 +41,9 @@ struct ADCDMATSKBLK* adctask_init(ADC_HandleTypeDef* phadc,\
  * *************************************************************************/
 
 extern struct ADCDMATSKBLK adc1dmatskblk[ADCNUM];
+
+/* Calibration values common to all ADC modules. */
+extern struct ADCCALCOMMON adcommon;
 
 #endif
 

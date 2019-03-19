@@ -107,7 +107,7 @@ osThreadId SerialTaskHandle = NULL;
 
 
 /* Queue */
-#define QUEUESIZE 8	// Total size of bcb's tasks can queue up
+#define QUEUESIZE 16	// Total size of bcb's tasks can queue up
 
 osMessageQId SerialTaskSendQHandle;
 //static uint8_t SerialTaskSendQBuffer[ QUEUESIZE * sizeof( struct SERIALSENDTASKBCB ) ];
@@ -214,7 +214,7 @@ void StartSerialTaskSend(void* argument1)
 	 	if ((pssb->pbuf == NULL) || (pssb->size == 0))
 		{ // Here, HAL is going to reject it
   			/* Release buffer just sent to it can be reused. */
-			xSemaphoreGive(pssb->semaphore);
+			xSemaphoreGive(pssb->semaphore);\
 			return;
 		}
 

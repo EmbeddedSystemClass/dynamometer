@@ -1,5 +1,5 @@
 /******************************************************************************
-* File Name          : adcTask.c
+* File Name          : adctask.c
 * Date First Issued  : 02/01/2019
 * Description        : Handle ADC w DMA using FreeRTOS/ST HAL within a task
 *******************************************************************************/
@@ -9,6 +9,10 @@
 #include "malloc.h"
 #include "adctask.h"
 #include "adcparams.h"
+#include "adcfastsum16.h"
+#include "ADCTask.h"
+
+#include "morse.h"
 
 
 struct ADCDMATSKBLK adc1dmatskblk[ADCNUM];
@@ -38,9 +42,7 @@ struct ADCDMATSKBLK* adctask_init(ADC_HandleTypeDef* phadc,\
 	uint32_t* pnoteval)
 {
 	uint16_t* pdma;
-	uint32_t* psum;
 	struct ADCDMATSKBLK* pblk = &adc1dmatskblk[0]; // ADC1 only for now
-	struct ADCDMATSKBLK* ptmp;
 
 	/* 'adcparams.h' MUST match what STM32CubeMX set up. */
 	if (ADC1IDX_ADCSCANSIZE != phadc->Init.NbrOfConversion) return NULL;
@@ -51,16 +53,14 @@ struct ADCDMATSKBLK* adctask_init(ADC_HandleTypeDef* phadc,\
 	/* length = total number of uint16_t in dma buffer */
 	uint32_t length = ADC1DMANUMSEQ * 2 * phadc->Init.NbrOfConversion;
 
+taskENTER_CRITICAL();
+
 	/* Initialize params for ADC. */
 	adcparams_init();
-
-taskENTER_CRITICAL();
 
 	/* Get dma buffer allocated */
 	pdma = (uint16_t*)calloc(length, sizeof(uint16_t));
 	if (pdma == NULL) {taskEXIT_CRITICAL();return NULL;}
-
-taskEXIT_CRITICAL();
 
 	/* Populate our control block */
 /* The following reproduced for convenience--
@@ -83,11 +83,9 @@ struct ADCDMATSKBLK
 	pblk->notebit1 = notebit1;
 	pblk->notebit2 = notebit2;
 	pblk->pnoteval = pnoteval;
-	pblk->dmact    = dmact;
 	pblk->pdma1    = pdma;
 	pblk->pdma2    = pdma + (ADC1DMANUMSEQ * phadc->Init.NbrOfConversion);
-	pblk->adctaskHandle = xTaskGetCurrentTaskHandle();
-	pblk->psum     = psum;
+	pblk->adctaskHandle = ADCTaskHandle;
 
 /**
   * @brief  Enables ADC DMA request after last transfer (Single-ADC mode) and enables ADC peripheral  
@@ -97,6 +95,8 @@ struct ADCDMATSKBLK
   * @param  Length The length of data to be transferred from ADC peripheral to memory.
   * @retval HAL status
   */
+
+taskEXIT_CRITICAL();
 	
 	HAL_ADC_Start_DMA(pblk->phadc, (uint32_t*)pblk->pdma1, length);
 	return pblk;
@@ -105,16 +105,13 @@ struct ADCDMATSKBLK
 /* #######################################################################
    ADC DMA interrupt callbacks
    ####################################################################### */
-uint32_t Ddma1;
-uint32_t Ddma2;
 /* *************************************************************************
  * void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc);
  *	@brief	: Call back from stm32f4xx_hal_adc: Halfway point of dma buffer
  * *************************************************************************/
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
-Ddma1 += 1;
-
+	adcommon.dmact += 1; // Running count
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 	struct ADCDMATSKBLK* ptmp = &adc1dmatskblk[0];
 
@@ -134,8 +131,7 @@ Ddma1 += 1;
  * *************************************************************************/
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-Ddma2 += 1;
-
+	adcommon.dmact += 1; // Running count
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 	struct ADCDMATSKBLK* ptmp = &adc1dmatskblk[0];
 

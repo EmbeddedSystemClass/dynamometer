@@ -10,11 +10,14 @@
 #include "malloc.h"
 
 #include "ADCTask.h"
+#include "adctask.h"
+#include "morse.h"
+#include "adcfastsum16.h"
+#include "adcparams.h"
 
-static int argument1;
-void StartADCTask(void* argument);
+extern ADC_HandleTypeDef hadc1;
 
-static uint16_t* adcbuffptr;
+void StartADCTask(void const * argument);
 
 osThreadId ADCTaskHandle;
 
@@ -26,16 +29,17 @@ osThreadId ADCTaskHandle;
  * *************************************************************************/
 osThreadId xADCTaskCreate(uint32_t taskpriority)
 {
- 	osThreadDef(ADCTask, StartSADCTask, osPriorityNormal, 0, 256);
-	ADCTaskHandle = osThreadCreate(osThread(MailboxTask), NULL);
+ 	osThreadDef(ADCTask, StartADCTask, osPriorityNormal, 0, 512);
+	ADCTaskHandle = osThreadCreate(osThread(ADCTask), NULL);
 	vTaskPrioritySet( ADCTaskHandle, taskpriority );
 	return ADCTaskHandle;
+
 }
 /* *************************************************************************
- * void StartADCTask(void* argument);
+ * void StartADCTask(void const * argument);
  *	@brief	: Task startup
  * *************************************************************************/
-void StartADCTask(void* argument)
+void StartADCTask(void const * argument)
 {
 	#define TSK02BIT02	(1 << 0)  // Task notification bit for ADC dma 1st 1/2 (adctask.c)
 	#define TSK02BIT03	(1 << 1)  // Task notification bit for ADC dma end (adctask.c)
@@ -64,23 +68,18 @@ void StartADCTask(void* argument)
 
 		if (noteval & TSK02BIT02)
 		{
-			pdma = &adc1dmatskblk[0].pdma1;
+			pdma = adc1dmatskblk[0].pdma1;
 		}
 		else
 		{
-			pdma = &adc1dmatskblk[0].pdma2;
+			pdma = adc1dmatskblk[0].pdma2;
 		}
 
 		/* Sum the readings 1/2 of DMA buffer to an array. */
-		adcfastsum(&adc1data[[0].adcs1sum[0], pdma);
+		adcfastsum16(&adc1data.adcs1sum[0], pdma);
 
 		/* Compute internal reference and temperature adjustments. */
-		adcparams_internal(&adc1data[[0].adcs1sum[ADC1IDX_INTERNALTEMP],&adc1data[[0].adcs1sum[ADC1IDX_INTERNALVREF]);
-
-		/* Computer compensated, calibrated, and filtered readings. */
-		
+		adcparams_internal(&adcommon, &adc1data.adcs1sum[ADC1IDX_INTERNALTEMP],&adc1data.adcs1sum[ADC1IDX_INTERNALVREF]);
   }
 }
-
-
 

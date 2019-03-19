@@ -8,6 +8,8 @@
 #ifndef __IIR_F1
 #define __IIR_F1
 
+#include <stdint.h>
+
 /* With this struct one pointer will convey everything necessary. */
 struct FILTERIIRF1
 {

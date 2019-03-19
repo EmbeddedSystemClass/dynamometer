@@ -21,5 +21,7 @@ osThreadId xADCTaskCreate(uint32_t taskpriority);
  * @return	: ADCTaskHandle
  * *************************************************************************/
 
+extern osThreadId ADCTaskHandle;
+
 #endif
 
