@@ -28,10 +28,14 @@ void adcparamsinit_init_common(struct ADCCALCOMMON* padccommon)
 	padccommon->ts_vref = *PVREFINT_CAL; // Factory calibration
 	padccommon->tcoef   = 30; // 30 typ, 50 max, (ppm/deg C)
 
-	padccommon->ts_cal1      = *PTS_CAL1; // Factory calibration
+	padccommon->ts_cal1      = (float)(*PTS_CAL1) * (float)ADC1DMANUMSEQ; // Factory calibration
 	padccommon->ts_cal2      = *PTS_CAL2; // Factory calibration
 	padccommon->ts_caldiff   = *PTS_CAL2 - *PTS_CAL1; // Pre-compute
-	padccommon->ts_80caldiff = (80.0 / padccommon->ts_caldiff); // Pre-compute
+	padccommon->ts_80caldiff = (80.0 / (padccommon->ts_caldiff *(float)ADC1DMANUMSEQ)); // Pre-compute
+
+	padccommon->uicaldiff    = *PTS_CAL2 - *PTS_CAL1; // Pre-compute
+	padccommon->ll_80caldiff = (80 * SCALE1) /(padccommon->uicaldiff);
+	padccommon->ui_cal1      =	(*PTS_CAL1) * ADC1DMANUMSEQ;
 
 	/* Data sheet gave these values.  May not need them. */
 	padccommon->v25     = 0.76; // Voltage at 25 °C, typ

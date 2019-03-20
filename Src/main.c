@@ -75,6 +75,7 @@
 #include "adctask.h"
 #include "ADCTask.h"
 #include "adcparams.h"
+#include "adcparamsinit.h"
 #include "gateway_PCtoCAN.h"
 #include "morse.h"
 #include "MailboxTask.h"
@@ -762,6 +763,9 @@ void StartDefaultTask(void const * argument)
 	struct SERIALSENDTASKBCB* pbuf1 = getserialbuf(&huart6,96);
 	if (pbuf1 == NULL) morse_trap(11);
 
+	struct SERIALSENDTASKBCB* pbuf3 = getserialbuf(&huart6,96);
+	if (pbuf1 == NULL) morse_trap(111);
+
 	struct SERIALSENDTASKBCB* pbuf2 = getserialbuf(&huart6,96);
 	if (pbuf1 == NULL) morse_trap(12);
 
@@ -781,6 +785,8 @@ void StartDefaultTask(void const * argument)
 HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 
 	uint32_t dmact_prev = adcommon.dmact;
+
+extern uint32_t adcdbg2;
 
 #define LOOPDELAYTICKS ((64*8)*5)	// 5 sec Loop delay (512 Hz tick rate)
 	for ( ;; )
@@ -817,6 +823,10 @@ HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 		HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 			yprintf(&pbuf2,"\n\rADC: Vdd: %6.3f Temp: %6.1f  %i",adcommon.fvdd,adcommon.degC, adcommon.dmact-dmact_prev);
 			dmact_prev = adcommon.dmact;
+
+			yprintf(&pbuf3,"\n\r C:   %d %d %d",adc1data.adcs1sum[ADC1IDX_INTERNALVREF]/ADC1DMANUMSEQ, adcommon.ivdd,adcdbg2);
+
+			
 		}	
 	}
   /* USER CODE END 5 */ 

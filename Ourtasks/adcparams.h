@@ -77,6 +77,11 @@ struct ADCCALCOMMON
 	float offset;        // Vtemp: offset
 	float degC;          // Temperature: degrees C
  	uint32_t dmact;      // DMA interrupt running counter
+
+	uint32_t uicaldiff;
+	int64_t ll_80caldiff;
+	uint32_t ui_cal1;
+	uint32_t ui_tmp;
 };
 
 struct ADCVTEMPVREF

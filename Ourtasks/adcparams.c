@@ -10,6 +10,9 @@ Not thread safe.
 #include "adcparams.h"
 #include "adcparamsinit.h"
 
+#include "DTW_counter.h"
+
+
 
 /*
 AN3964
@@ -79,19 +82,32 @@ void adcparams_init(void)
  * @param	: ptemp = Pointer to summed DMA reading
  * @param	: pvref = Pointer to summed Vref reading
  * *************************************************************************/
+uint32_t adcdbg1;
+uint32_t adcdbg2;
 void adcparams_internal(struct ADCCALCOMMON* pacom, uint16_t* ptemp, uint16_t* pvref)
 {
-/*
+/* 
+   Reproduced from 'adcparamsinit.h' for convenience.
 #define PVREFINT_CAL ((uint16_t*)0x1FFF7A2A))  // Pointer to factory calibration: Vref
 #define PTS_CAL1     ((uint16_t*)0x1FFF7A2C))  // Pointer to factory calibration: Vtemp
 #define PTS_CAL2     ((uint16_t*)0x1FFF7A2E))  // Pointer to factory calibration: Vtemp
 */
-	
+
+	/* Vdd computed from Vrefint using factory calibration. */
 	pacom->fvdd  = (3.300 * (float)ADC1DMANUMSEQ * (*PVREFINT_CAL)) /  (float)(*pvref);
 	
-// Temp = 80 ⁄ ( TS_CAL2 – TS_CAL1 ) × ( ValTS – TS_CAL1 ) + 30
-	pacom->degC = pacom->ts_80caldiff * (float)(*ptemp) - pacom->ts_cal1 + 30;
+	/* Temperature computed from internal sensor using factory 
+      calibrations @ Vdd = 3.3v, and adjusted for measured Vdd. */
+//	pacom->degC = (pacom->ts_80caldiff) * ( (float)(*ptemp) * ( ( pacom->fvdd * (1.0/3.3) ) ) - pacom->ts_cal1)  + 30;
 
+adcdbg1 = DTWTIME;
+	
+	pacom->ivdd = (3300 * ADC1DMANUMSEQ) * (*PVREFINT_CAL) / (*pvref);
+
+	pacom->ui_tmp = (pacom->ivdd * (*ptemp) ) / 3300;
+	pacom->degC  = pacom->ll_80caldiff * (pacom->ui_tmp - pacom->ui_cal1) + (30 * SCALE1 * ADC1DMANUMSEQ);
+	pacom->degC *= (1.0/(SCALE1*ADC1DMANUMSEQ)); // Fast because power of two.
+adcdbg2 = DTWTIME - adcdbg1;
 
 	return;
 }

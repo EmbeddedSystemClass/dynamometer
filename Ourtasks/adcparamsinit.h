@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include "adcparams.h"
 
-
+#define SCALE1 (1 << 16)
 
 /* Factory calibration pointers. */
 #define PVREFINT_CAL ((uint16_t*)0x1FFF7A2A)  // Pointer to factory calibration: Vref
