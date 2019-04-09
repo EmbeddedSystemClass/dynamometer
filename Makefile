@@ -110,6 +110,7 @@ C_SOURCES += Ourtasks/stackwatermark.c
 C_SOURCES += Ourtasks/DMOCchecksum.c
 C_SOURCES += Ourtasks/adcfastsum16.c
 C_SOURCES += Ourtasks/adcparamsinit.c
+C_SOURCES += Ourtasks/iir_f1.c
 
 # /* USER CODE END */ 
 

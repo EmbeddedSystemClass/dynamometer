@@ -4,6 +4,29 @@
 * Board              : DiscoveryF4
 * Description        : Parameters for ADC app configuration
 *******************************************************************************/
+/* CALIBRATION NOTES:
+
+5 volt supply calibration:
+[Do this first: This calibration is applied to all 5v sensors]
+- Measure 5v supply
+- Measure Vdd
+- Display ADCsum[5v supply]
+Compute--
+Ratio 'sensor5vcal' = (Vdd/V5volt) * (ADCsum[5v supply]/(4095*numdmaseq)
+ where numdmaseq = number of ADC scans per 1/2 dma (i.e. number readings in sum)
+
+Ratiometric 5v sensor calibration:
+- With 5v supply calibration compiled-in:
+- Measure Sensor voltage: Vx
+- Display:
+  . ADCsum[sensor]
+  . Va = (V5 * ratio)/ADCsum[5v]
+Compute
+  Calibration ratio = ADCsum[sensor]/Va
+
+
+
+*/
 
 #ifndef __ADCPARAMS
 #define __ADCPARAMS
@@ -28,19 +51,22 @@
 
 /* Calibration option.                                    */
 /* Calibration is applied after compensation adjustments. */
-#define ADC1PARAM_CALIBTYPE_RAW    0    // No calibration applied
-#define ADC1PARAM_CALIBTYPE_OFSC   1    // Offset & scale (poly ord 0 & 1)
-#define ADC1PARAM_CALIBTYPE_POLY2  2    // Polynomial 2nd ord
-#define ADC1PARAM_CALIBTYPE_POLY3  3    // Polynomial 3nd ord
+#define ADC1PARAM_CALIBTYPE_RAW_F  0    // No calibration applied: FLOAT
+#define ADC1PARAM_CALIBTYPE_OFSC   1    // Offset & scale (poly ord 0 & 1): FLOAT
+#define ADC1PARAM_CALIBTYPE_POLY2  2    // Polynomial 2nd ord: FLOAT
+#define ADC1PARAM_CALIBTYPE_POLY3  3    // Polynomial 3nd ord: FLOAT
+#define ADC1PARAM_CALIBTYPE_RAW_UI 4    // No calibration applied: UNSIGNED INT
 
 /* Compensation type                                         */
 /* Assumes 5v sensor supply is measured with an ADC channel. */
-#define ADC1PARAM_COMPTYPE_NONE     0     // No supply or temp compensation applied
-#define ADC1PARAM_COMPTYPE_VOLT3A   1     // 3.3v sensor; Vref (absolute) compensation
-#define ADC1PARAM_COMPTYPE_VOLT5A   2     // 5v sensor; Vref w 5v supply reading compensation
-#define ADC1PARAM_COMPTYPE_VOLT3AT  3     // "3A" above with temperature comp applied to Vref
-#define ADC1PARAM_COMPTYPE_VOLT5AT  4     // "5A" above with temperature comp applied to Vref
-#define ADC1PARAM_COMPTYPE_VOLT5R   5     // 5v sensor, ratiometric using 5v supply reading compensation 
+#define ADC1PARAM_COMPTYPE_NONE      0     // No supply or temp compensation applied
+#define ADC1PARAM_COMPTYPE_RATIOVDD  1     // Vdd (3.3v nominal) ratiometric
+#define ADC1PARAM_COMPTYPE_RATIO5V   2     // 5v ratiometric with 5->Vdd measurement
+#define ADC1PARAM_COMPTYPE_RATIO5VNO 3     // 5v ratiometric without 5->Vdd measurement
+#define ADC1PARAM_COMPTYPE_VOLTVDD   4     // Vdd (absolute), Vref compensation applied
+#define ADC1PARAM_COMPTYPE_VOLTVDDNO 5     // Vdd (absolute), no Vref compensation applied
+#define ADC1PARAM_COMPTYPE_VOLTV5    6     // 5v (absolute), with 5->Vdd measurement applied
+#define ADC1PARAM_COMPTYPE_VOLTV5NO  7     // 5v (absolute), without 5->Vdd measurement applied
 
 /* Filter type codes */
 #define ADCFILTERTYPE_NONE		0  // Skip filtering
@@ -55,12 +81,19 @@ union ADCCALREADING
 	float     f;
 };
 
-/* This holds calibration values common to all ADC modules. */
+/* This holds calibration values common to all ADC modules. 
+     Some of these are not used.
+*/
 struct ADCCALCOMMON
 {
 	// Calibration for external
 	float sensor5vcal;   // The 5v->Vdd divider ratio (e.g. 0.54)
-	// Calibration for internals
+	float sensor5vcalVdd;   // The 5v->Vdd divider ratio Vdd adjusted
+	float fvddcomp;      // 5->Vdd adjusted factor
+	float fvddrecip;
+	float f5_Vddratio;     // (V5volt * Ratio)/ADCsum[5volt supply]
+
+	// Internal voltage reference
 	float vref;          // Vref: 1.18 min, 1.21 typ, 1.24 max
 	float tcoef;         // Vref: Temp coefficient (ppm/deg C: 30 typ; 50 max)
 	float fvdd;          // Vdd: float (volts)
@@ -68,6 +101,7 @@ struct ADCCALCOMMON
 	uint16_t ivdd;       // Vdd: fixed (mv)
 	uint16_t ts_vref;
 
+	// Internal temperature sensor (floats)
 	float ts_cal1;    // Vtemp: TS_CAL1 converted to float ( 30 deg C 3.3v)
 	float ts_cal2;    // Vtemp: TS_CAL2 converted to float (110 deg C 3.3v)
 	float ts_caldiff; // CAL2-CAL1
@@ -78,6 +112,7 @@ struct ADCCALCOMMON
 	float degC;          // Temperature: degrees C
  	uint32_t dmact;      // DMA interrupt running counter
 
+	// For integer computation (much faster)
 	uint32_t uicaldiff;
 	int64_t ll_80caldiff;
 	uint32_t ui_cal1;

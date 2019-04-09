@@ -29,7 +29,7 @@ osThreadId ADCTaskHandle;
  * *************************************************************************/
 osThreadId xADCTaskCreate(uint32_t taskpriority)
 {
- 	osThreadDef(ADCTask, StartADCTask, osPriorityNormal, 0, 512);
+ 	osThreadDef(ADCTask, StartADCTask, osPriorityNormal, 0, 128);
 	ADCTaskHandle = osThreadCreate(osThread(ADCTask), NULL);
 	vTaskPrioritySet( ADCTaskHandle, taskpriority );
 	return ADCTaskHandle;
@@ -80,6 +80,7 @@ void StartADCTask(void const * argument)
 
 		/* Compute internal reference and temperature adjustments. */
 		adcparams_internal(&adcommon, &adc1data.adcs1sum[ADC1IDX_INTERNALTEMP],&adc1data.adcs1sum[ADC1IDX_INTERNALVREF]);
+
   }
 }
 

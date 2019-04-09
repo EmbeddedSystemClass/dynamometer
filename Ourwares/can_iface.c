@@ -1,6 +1,6 @@
 /******************************************************************************
 * File Name          : can_iface.c
-* Date First Issued  : 05-28-2015/01/02/2019
+* Date First Issued  : 05-28-2015
 * Board              : F103 or F4
 * Description        : Interface CAN FreeRTOS to STM32CubeMX HAL can driver 
 *******************************************************************************/
@@ -17,8 +17,8 @@ This simplifies the issue of disabling of interrupts
   old can.driver[ch] deleted from svn.
 */
 
-/* The following sends outgoing CAN msgs back into FreeRTOS CAN receive queue */
-#define CANMSGLOOPBACK
+/* The following sends all outgoing CAN msgs back into FreeRTOS CAN receive queue */
+//#define CANMSGLOOPBACKSALL
 
 #ifdef CHEATINGONHAL
 #include "stm32f407.h" 	// **** CHEATING (processor dependent) ****
@@ -29,6 +29,20 @@ This simplifies the issue of disabling of interrupts
 #include "stm32f4xx_hal_can.h"
 #include "can_iface.h"
 #include "DTW_counter.h"
+
+/* Debugging */
+#include "morse.h"
+extern struct CAN_CTLBLOCK* pctl0;
+extern struct CAN_CTLBLOCK* pctl1;
+extern CAN_HandleTypeDef hcan1;
+extern CAN_HandleTypeDef hcan2;
+
+
+/* Abort feature--which may hang TX! */
+#define YESABORTCODE
+
+/* Uncomment to cause all TX msgs to loop back */
+//#define CANMSGLOOPBACKALL
 
 /* subroutine declarations */
 static void loadmbx2(struct CAN_CTLBLOCK* pctl);
@@ -232,6 +246,7 @@ taskENTER_CRITICAL();
       when 'MailboxTask' calls 'can_iface_mbx_init' */
 
 taskEXIT_CRITICAL();
+
 	return pctl;	// Return pointer to control block
 }
 /******************************************************************************
@@ -324,20 +339,18 @@ int can_driver_put(struct CAN_CTLBLOCK* pctl,struct CANRCVBUF *pcan,uint8_t maxr
 		if ( (pctl->pend.plinknext)->can.id < (pctl->mbx0 & ~0x1)  ) // Use mailbox shadow id
 #endif
 		{ // Here, new msg has higher CAN priority than msg in mailbox
-
-/* CAN transmit status register (CAN_TSR) ref manual --
-Set by software to abort the transmission request for the corresponding mailbox.
-Cleared by hardware when the mailbox becomes empty.
-Setting this bit has no effect when the mailbox is not pending for transmission. 
-*/
+/* &&&&&&&&&&&&&& BEGIN ABORT MODS &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&& */
+#ifdef YESABORTCODE
 			pctl->abortflag = 1;	// Set flag for interrupt routine use
-//			CAN_TSR(pctl->vcan) |= CAN_TSR_ABRQ0;	// Set Abort request for mailbox 0.
+			taskEXIT_CRITICAL(); // ==> NOTE: allow interrupts before setting abort!
 			HAL_CAN_AbortTxRequest(pctl->phcan, CAN_TX_MAILBOX0);
+//			taskEXIT_CRITICAL(); // ==> AFTER! Which fail!
+			return 0;
+#endif
 		}
+/* &&&&&&&&&&&&&& END ABORT MODS &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&& */
 	}
-//	reenable_TXints(save);
-	taskEXIT_CRITICAL();
-
+	taskEXIT_CRITICAL(); // Re-enable interrupts
 	return 0;	// Success!
 }
 /*---------------------------------------------------------------------------------------------
@@ -409,6 +422,7 @@ static void moveremove2(struct CAN_CTLBLOCK* pctl)
  * ISR CAN Callback routines
  *####################################################################################### */
 
+
 /* *********************************************************************
  * struct CAN_CTLBLOCK* getpctl(CAN_HandleTypeDef *phcan);
  * @brief	: Look up CAN control block pointer, given 'MX CAN handle from callback
@@ -417,6 +431,8 @@ static void moveremove2(struct CAN_CTLBLOCK* pctl)
  * *********************************************************************/
 struct CAN_CTLBLOCK* getpctl(CAN_HandleTypeDef *phcan)
 {
+//if (pctl == pctl1) morse_trap(73);
+
 	struct CAN_CTLBLOCK** ppx = &pctllist[0];
 	while (ppx != ppctllist) // Step through list of pointers 
 	{
@@ -432,11 +448,17 @@ void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *phcan)
 	struct CAN_CTLBLOCK* pctl = getpctl(phcan); // Lookup our pointer
 
 	/* Loop back CAN =>TX<= msgs. */
-#ifdef CANMSGLOOPBACK
 volatile	struct CAN_POOLBLOCK* p = pctl->pend.plinknext;
 	struct CANRCVBUFN ncan;
 	ncan.pctl = pctl;
 	ncan.can = p->can;
+	
+	/* Either loop back all, or msg-by-msg select loopback */
+#ifndef CANMSGLOOPBACKALL
+	// Check of loopback bit in msg is set
+	if ( (p->x.xb[2] & CANMSGLOOPBACKBIT) != 0)
+#endif
+   {
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 			*pctl->cirptrs.pwork = ncan;
 			pctl->cirptrs.pwork++;
@@ -448,8 +470,7 @@ volatile	struct CAN_POOLBLOCK* p = pctl->pend.plinknext;
 					pctl->tsknote.notebit, eSetBits,\
 					&xHigherPriorityTaskWoken );
 			}
-
-#endif
+	}
 
 	moveremove2(pctl);	// remove from pending list, add to free list
 	pctl->abortflag = 0;
@@ -460,9 +481,11 @@ volatile	struct CAN_POOLBLOCK* p = pctl->pend.plinknext;
 /* Transmission Mailbox 0 Abort callback. */
 void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *phcan)
 {
+#ifdef YESABORTCODE
 	struct CAN_CTLBLOCK* pctl = getpctl(phcan);
 	loadmbx2(pctl);		// Load mailbox 0.  Mailbox should be available/empty.
 	pctl->abortflag = 0;
+#endif
 }
 
 /* Error callback */

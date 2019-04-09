@@ -16,7 +16,7 @@ struct FILTERIIRF1
 	float coef;      // coefficient
 	float onemcoef;  // 1 - coef 
 	float z1;        // Z^-1
-	uint8_t skipctr; // Number of initial readings to not filter
+	uint16_t skipctr; // Number of initial readings to not filter
 };
 
 /* *************************************************************************/

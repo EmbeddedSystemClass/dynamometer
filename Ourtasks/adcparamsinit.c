@@ -14,6 +14,7 @@ by the java program from the sql database.
 
 #include "adcparamsinit.h"
 #include "adcparams.h"
+#include "ADCTask.h"
 
 /* *************************************************************************
  * void adcparamsinit_init_common(struct ADCCALCOMMON* padccommon);
@@ -23,10 +24,11 @@ by the java program from the sql database.
 void adcparamsinit_init_common(struct ADCCALCOMMON* padccommon)
 {
 
-	padccommon->sensor5vcal = 0.54;	// 5v->Vdd divide ratio
+	padccommon->sensor5vcal = 0.54 / ADCSEQNUM;	// 5v->Vdd divide ratio
+	padccommon->sensor5vcalVdd = padccommon->sensor5vcal / 3.3; // Precompute: adjust for Vdd
 
 	padccommon->ts_vref = *PVREFINT_CAL; // Factory calibration
-	padccommon->tcoef   = 30; // 30 typ, 50 max, (ppm/deg C)
+	padccommon->tcoef   = 30E-6; // 30 typ, 50 max, (ppm/deg C)
 
 	padccommon->ts_cal1      = (float)(*PTS_CAL1) * (float)ADC1DMANUMSEQ; // Factory calibration
 	padccommon->ts_cal2      = *PTS_CAL2; // Factory calibration
@@ -46,9 +48,20 @@ void adcparamsinit_init_common(struct ADCCALCOMMON* padccommon)
 
 /* *************************************************************************
  * void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx);
- *	@brief	: Load structs for compensation, calibration and filtering all ADC channels
+ *	@brief	: Load structs for compensation, calibration and filtering for ADC channels
  * @param	: pacsx = Pointer to struct "everything" for this ADC module
  * *************************************************************************/
+/* Reproduced for convenience
+   Calibration is applied after compensation adjustments. 
+#define ADC1PARAM_COMPTYPE_NONE      0     // No supply or temp compensation applied
+#define ADC1PARAM_COMPTYPE_RATIOVDD  1     // Vdd (3.3v nominal) ratiometric
+#define ADC1PARAM_COMPTYPE_RATIO5V   2     // 5v ratiometric with 5->Vdd measurement
+#define ADC1PARAM_COMPTYPE_RATIO5VNO 3     // 5v ratiometric without 5->Vdd measurement
+#define ADC1PARAM_COMPTYPE_VOLTVDD   4     // Vdd (absolute), Vref compensation applied
+#define ADC1PARAM_COMPTYPE_VOLTVDDNO 5     // Vdd (absolute), no Vref compensation applied
+#define ADC1PARAM_COMPTYPE_VOLTV5    6     // 5v (absolute), with 5->Vdd measurement applied
+#define ADC1PARAM_COMPTYPE_VOLTV5NO  7     // 5v (absolute), without 5->Vdd measurement applied
+*/
 void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 {
 	struct ADCCHANNELSTUFF* pacs; // Use pointer for convenience
@@ -58,7 +71,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;      // Single pole IIR
-	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_RAW; // Raw; no calibration applied
+	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_RAW_F; // Raw; no calibration applied
 	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_NONE; // No temperature compenstaion
 
 	// Calibration coefficients.
@@ -66,8 +79,8 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 	pacs->cal.f[1] = 1.0;  // Scale (jic calibration not skipped)
 
 	// Filter initialize, coefficients, and pre-computed value. */
-	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.01;  // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.skipctr  = 2500; 	 // Initial readings skip count
+	pacs->fpw.iir_f1.coef     = 0.999;  // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 /* IN17 - Internal temperature sensor */
@@ -75,7 +88,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;      // Single pole IIR
-	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_RAW; // Raw; no calibration applied
+	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_RAW_F; // Raw; no calibration applied
 	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_NONE; // No temperature compenstaion
 
 	// Calibration coefficients.
@@ -84,7 +97,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter initialize, coefficients, and pre-computed value. */
 	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.01;  // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.coef     = 0.9;  // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 /* Hall effect lever.  5v supply. */
@@ -93,7 +106,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;        // Single pole IIR
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
-	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT5A; // 5v sensor; Vref w 5v supply reading compensation
+	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_RATIOVDD; // 5v sensor; Vref w 5v supply reading compensation
 
 	// Calibration coefficients.
 	pacs->cal.f[0] = 0.0;     // Offset
@@ -101,7 +114,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter initialize, coefficients, and pre-computed value. */
 	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.1;   // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.coef     = 0.9;   // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 /* Resistor pot connected to 3.3v (Vdd) supply. */
@@ -110,7 +123,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;        // Single pole IIR
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
-	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT3AT; // 5v sensor; Vref abs w temp
+	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_RATIOVDD; // 5v sensor; Vref abs w temp
 
 	// Calibration coefficients.
 	pacs->cal.f[0] = 0.0;           // Offset
@@ -118,7 +131,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter initialize, coefficients, and pre-computed value. */
 	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.1;   // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.coef     = 0.9;   // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 /* Total battery current sensor. */
@@ -127,7 +140,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;        // Single pole IIR
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
-	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT5AT; // 5v w Vref abs w temp
+	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_RATIO5V; // 5v w Vref abs w temp
 
 	// Calibration coefficients.
 	pacs->cal.f[0] = 2047.5; // Offset
@@ -135,7 +148,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter initialize, coefficients, and pre-computed value. */
 	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.1;   // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.coef     = 0.9;   // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 /* Current sensor: motor #1 */
@@ -144,7 +157,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;        // Single pole IIR
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
-	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT5AT; // 5v w Vref abs w temp
+	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLTV5; // 5v w Vref abs w temp
 
 	// Calibration coefficients.
 	pacs->cal.f[0] = 2047.5;  // Offset
@@ -152,7 +165,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter initialize, coefficients, and pre-computed value. */
 	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.1;   // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.coef     = 0.9;   // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 /* Current sensor: motor #2 */
@@ -161,7 +174,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;        // Single pole IIR
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
-	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT5AT; // 5v w Vref abs w temp
+	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_RATIO5V; // 5v w Vref abs w temp
 
 	// Calibration coefficients.
 	pacs->cal.f[0] = 2047.5;  // Offset
@@ -169,7 +182,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter initialize, coefficients, and pre-computed value. */
 	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.1;   // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.coef     = 0.9;   // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 /* +12v supply voltage */
@@ -178,7 +191,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;        // Single pole IIR
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
-	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT5AT; // 5v w Vref abs w temp
+	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLTVDD; // 5v w Vref abs w temp
 
 	// Calibration coefficients.
 	pacs->cal.f[0] = 0.0;     // Offset
@@ -186,7 +199,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter initialize, coefficients, and pre-computed value. */
 	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.1;   // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.coef     = 0.9;   // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 
@@ -196,7 +209,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 	// Filter type, calibration option, compensation option. */
 	pacs->xprms.filttype  = ADCFILTERTYPE_IIR1;        // Single pole IIR
 	pacs->xprms.calibtype = ADC1PARAM_CALIBTYPE_OFSC;  // Offset & scale (poly ord 0 & 1)
-	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLT5A; // 5v sensor; Vref w 5v supply reading compensation
+	pacs->xprms.comptype  = ADC1PARAM_COMPTYPE_VOLTVDD; // 5v sensor; Vref w 5v supply reading compensation
 
 	// Calibration coefficients.
 	pacs->cal.f[0] = 0.0;    // Offset
@@ -204,7 +217,7 @@ void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx)
 
 	// Filter initialize, coefficients, and pre-computed value. */
 	pacs->fpw.iir_f1.skipctr  = 4; 	 // Initial readings skip count
-	pacs->fpw.iir_f1.coef     = 0.1;   // Filter coefficient (< 1.0)
+	pacs->fpw.iir_f1.coef     = 0.9;   // Filter coefficient (< 1.0)
 	pacs->fpw.iir_f1.onemcoef = (1 - pacs->fpw.iir_f1.coef);
 
 	return;

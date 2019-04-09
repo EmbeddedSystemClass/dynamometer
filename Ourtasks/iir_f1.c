@@ -19,13 +19,13 @@ float iir_f1_f(struct FILTERIIRF1* pfc, float flt)
 	if (pfc->skipctr > 0)
 	{ // Here, skip starting filter until a few readings
 		pfc->skipctr -= 1;
-		pfc->z1 = flt / pfc->coef;
+		pfc->z1 = flt / pfc->onemcoef;
 	}
 	else
 	{
-		pfc->z1 += (flt - pfc->z1 * pfc->onemcoef) );
+		pfc->z1 = (flt + pfc->z1 * pfc->coef);
 	}
-	return ( pfc->z1 * pfc->coef );
+	return ( pfc->z1 * pfc->onemcoef);
 }
 /* *************************************************************************
  * float iir_f1_64b(struct FILTERIIRF1* pfc, uint64_t* pval);
@@ -47,6 +47,6 @@ float iir_f1_64b(struct FILTERIIRF1* pfc, uint64_t* pval)
  * *************************************************************************/
 float iir_f1_32b(struct FILTERIIRF1* pfc, uint32_t val)
 {
-	return iir_f1_f( pfc, (float)(pval) );
+	return iir_f1_f( pfc, (float)(val) );
 }
 
