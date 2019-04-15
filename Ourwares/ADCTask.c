@@ -29,7 +29,7 @@ osThreadId ADCTaskHandle;
  * *************************************************************************/
 osThreadId xADCTaskCreate(uint32_t taskpriority)
 {
- 	osThreadDef(ADCTask, StartADCTask, osPriorityNormal, 0, 128);
+ 	osThreadDef(ADCTask, StartADCTask, osPriorityNormal, 0, 384);
 	ADCTaskHandle = osThreadCreate(osThread(ADCTask), NULL);
 	vTaskPrioritySet( ADCTaskHandle, taskpriority );
 	return ADCTaskHandle;
@@ -76,10 +76,13 @@ void StartADCTask(void const * argument)
 		}
 
 		/* Sum the readings 1/2 of DMA buffer to an array. */
-		adcfastsum16(&adc1data.adcs1sum[0], pdma);
+		adcfastsum16(&adc1data.adcs1sum[0], pdma); // Fast in-line addition
 
-		/* Compute internal reference and temperature adjustments. */
-		adcparams_internal(&adcommon, &adc1data.adcs1sum[ADC1IDX_INTERNALTEMP],&adc1data.adcs1sum[ADC1IDX_INTERNALVREF]);
+		/* Compute internal reference, internal temperature, 5v sensor supply for adjustments to other readings. */
+		adcparams_internal(&adcommon, &adc1data);
+
+		/* Compensate and calibrate each of the other ADC readings. */
+		adcparams_chan(ADC1IDX_RESISRPOT);  // Resistor pot.	
 
   }
 }

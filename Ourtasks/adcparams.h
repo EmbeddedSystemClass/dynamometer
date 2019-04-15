@@ -87,17 +87,24 @@ union ADCCALREADING
 struct ADCCALCOMMON
 {
 	// Calibration for external
-	float sensor5vcal;   // The 5v->Vdd divider ratio (e.g. 0.54)
-	float sensor5vcalVdd;   // The 5v->Vdd divider ratio Vdd adjusted
 	float fvddcomp;      // 5->Vdd adjusted factor
-	float fvddrecip;
-	float f5_Vddratio;     // (V5volt * Ratio)/ADCsum[5volt supply]
+	float fvddrecip;     // ?
+
+	float fvddratio;     // Vdd (3.3v) ratiometric constant
+
+	float sensor5vcal;   // The 5v->Vdd divider ratio (e.g. 0.54)
+	float sensor5vcalVdd;// The 5v->Vdd divider ratio Vdd adjusted
+	float f5_Vddratio;   // (V5volt * Ratio)/ADCsum[5volt supply]
+	float f5vsupplyprecal; // 5v supply precalc calibration ratio
+	float f5vsupplyprecal_offset; // 5v supply precalc calibration ratio
+	float f5vsupply;       // 5v supply
+	float f5vsupplyfilt;   // 5v supply, filtered
 
 	// Internal voltage reference
 	float vref;          // Vref: 1.18 min, 1.21 typ, 1.24 max
 	float tcoef;         // Vref: Temp coefficient (ppm/deg C: 30 typ; 50 max)
 	float fvdd;          // Vdd: float (volts)
-	float fvddfilt;      // Vdd: float (volts) filtered
+	float fvddfilt;      // Vdd: float (volts), filtered
 	uint16_t ivdd;       // Vdd: fixed (mv)
 	uint16_t ts_vref;
 
@@ -110,6 +117,7 @@ struct ADCCALCOMMON
    float slope;         // Vtemp: mv/degC 
 	float offset;        // Vtemp: offset
 	float degC;          // Temperature: degrees C
+	float degCfilt;      // Temperature: degrees C, filtered
  	uint32_t dmact;      // DMA interrupt running counter
 
 	// For integer computation (much faster)
@@ -169,6 +177,7 @@ struct ADCCHANNELSTUFF
 struct ADC1DATA
 {
   union ADCCALREADING adc1calreading[ADC1IDX_ADCSCANSIZE]; // Calibrated readings
+  union ADCCALREADING adc1calreadingfilt[ADC1IDX_ADCSCANSIZE]; // Calibrated readings: filtered
   uint32_t ctr; // Running count of updates.
   uint16_t adcs1sum[ADC1IDX_ADCSCANSIZE]; // Sum of 1/2 DMA buffer for each channel
 };
@@ -178,11 +187,10 @@ void adcparams_init(void);
 /*	@brief	: Copy parameters into structs
  * NOTE: => ASSUMES ADC1 ONLY <==
  * *************************************************************************/
-void adcparams_internal(struct ADCCALCOMMON* pacom, uint16_t* ptemp, uint16_t* pvref);
+void adcparams_internal(struct ADCCALCOMMON* pacom, struct ADC1DATA* padc1);
 /*	@brief	: Update values used for compensation from Vref and Temperature
  * @param	: pacom = Pointer calibration parameters for Temperature and Vref
- * @param	: ptemp = Pointer to summed DMA reading
- * @param	: pvref = Pointer to summed Vref reading
+ * @param	: padc1 = Pointer to array of ADC reading sums plus other stuff
  * *************************************************************************/
 
 /* Raw and calibrated ADC1 readings. */

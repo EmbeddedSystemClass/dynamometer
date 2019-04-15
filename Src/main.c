@@ -85,6 +85,8 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+//#define CONFIGCAN2	// Do initializations for CAN2
+
 void* verr[8];
 uint32_t verrx = 0;
 __attribute__( ( always_inline ) ) __STATIC_INLINE uint32_t __get_SP(void) 
@@ -249,7 +251,7 @@ DiscoveryF4 LEDs --
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 384);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityLow, 0, 384);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -265,14 +267,14 @@ DiscoveryF4 LEDs --
 	if (ret < 0) morse_trap(1); // Panic LED flashing
 
 	/* Add bcb circular buffer to SerialTaskSend for usart2 */
-	#define NUMCIRBCB2  12 // Size of circular buffer of BCB for usart2
+	#define NUMCIRBCB2  16 // Size of circular buffer of BCB for usart2
 	ret = xSerialTaskSendAdd(&huart2, NUMCIRBCB2, 1); // dma
 	if (ret < 0) morse_trap(2); // Panic LED flashing
 
 	/* Setup semaphore for yprint and sprintf et al. */
 	yprintf_init();
 
-	/* Create serial receiving task of uart6 (char-by-char) */
+	/* Create serial receiving task. */
 	xSerialTaskReceiveCreate(0);
 
 	/* USB-CDC buffering */
@@ -301,26 +303,30 @@ DiscoveryF4 LEDs --
 	if (pctl0->ret < 0) morse_trap(77);
 
 	// CAN 2
+#ifdef CONFIGCAN2
 	pctl1 = can_iface_init(&hcan2, 1,32, 64);
 	if (pctl1 == NULL) morse_trap(8); // Panic LED flashing
 	if (pctl1->ret < 0) morse_trap(88);
+#endif
 
 	/* Setup CAN hardware filters to default to accept all ids. */
 	HAL_StatusTypeDef Cret;
 	Cret = canfilter_setup_first(0, &hcan1, 15); // CAN1
 	if (Cret == HAL_ERROR) morse_trap(9);
 
+#ifdef CONFIGCAN2
 	Cret = canfilter_setup_first(1, &hcan2, 15); // CAN2
 	if (Cret == HAL_ERROR) morse_trap(10);
+#endif
 
 	/* Remove "accept all" CAN msgs and add specific id & mask, or id here. */
 	// See canfilter_setup.h
 
 	/* Create MailboxTask */
-	xMailboxTaskCreate(1);
+	xMailboxTaskCreate(2);
 
 	/* Create GatewayTask */
-	xGatewayTaskCreate(0);
+	xGatewayTaskCreate(1);
 
 	/* Create Mailbox control block w 'take' pointer for each CAN module. */
 	struct MAILBOXCANNUM* pmbxret;
@@ -329,7 +335,7 @@ DiscoveryF4 LEDs --
 	if (pmbxret == NULL) morse_trap(16);
 
 	// (CAN2 control block pointer, size of circular buffer)
-	MailboxTask_add_CANlist(pctl1, 0); // Use default buff size
+	MailboxTask_add_CANlist(pctl1, 48); // Use default buff size
 	if (pmbxret == NULL) morse_trap(17);
 
 	/* Further initialization of mailboxes takes place when tasks start */
@@ -341,17 +347,21 @@ DiscoveryF4 LEDs --
 		CAN_IT_RX_FIFO1_MSG_PENDING    );
 
 	/* Select interrupts for CAN2 */
+#ifdef CONFIGCAN2
 	HAL_CAN_ActivateNotification(&hcan2, \
 		CAN_IT_TX_MAILBOX_EMPTY     |  \
 		CAN_IT_RX_FIFO0_MSG_PENDING |  \
 		CAN_IT_RX_FIFO1_MSG_PENDING    );
+#endif
 
 	/* Start CANs */
 	HAL_CAN_Start(&hcan1); // CAN1
+#ifdef CONFIGCAN2
 	HAL_CAN_Start(&hcan2); // CAN2
+#endif
 
 	/* ADC summing, calibration, etc. */
-	xADCTaskCreate(2);
+	xADCTaskCreate(3);
 
 /* =================================================== */
 
@@ -772,9 +782,12 @@ void StartDefaultTask(void const * argument)
 	if (pbuf1 == NULL) morse_trap(11);
 
 	struct SERIALSENDTASKBCB* pbuf3 = getserialbuf(&huart6,96);
-	if (pbuf1 == NULL) morse_trap(111);
+	if (pbuf1 == NULL) morse_trap(13);
 
 	struct SERIALSENDTASKBCB* pbuf2 = getserialbuf(&huart6,96);
+	if (pbuf1 == NULL) morse_trap(12);
+
+	struct SERIALSENDTASKBCB* pbuf4 = getserialbuf(&huart6,96);
 	if (pbuf1 == NULL) morse_trap(12);
 
 	int ctr = 0; // Running count
@@ -796,7 +809,6 @@ HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 
 extern volatile uint32_t adcdbg2;
 
-#define LOOPDELAYTICKS ((64*8)*5)	// 5 sec Loop delay (512 Hz tick rate)
 	for ( ;; )
 	{
 		xTaskNotifyWait(noteused, 0, &noteval, portMAX_DELAY);
@@ -818,7 +830,7 @@ extern volatile uint32_t adcdbg2;
 
 			/* Heap usage (and test fp woking. */
 			heapsize = xPortGetFreeHeapSize();
-			yprintf(&pbuf2,"\n\rGetFreeHeapSize: total: %i used %i %3.1f%% free: %i",configTOTAL_HEAP_SIZE, heapsize,\
+			yprintf(&pbuf3,"\n\rGetFreeHeapSize: total: %i used %i %3.1f%% free: %i",configTOTAL_HEAP_SIZE, heapsize,\
 				100.0*(float)heapsize/configTOTAL_HEAP_SIZE,(configTOTAL_HEAP_SIZE-heapsize));
 
 			/* ==== CAN MSG sending test ===== */
@@ -831,10 +843,15 @@ extern volatile uint32_t adcdbg2;
 		{
 			noteused |= DEFAULTTSKBIT01;
 		HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
-			yprintf(&pbuf2,"\n\rADC: Vdd: %7.4f %8.4f   Temp: %6.1f  %i",adcommon.fvdd,adcommon.fvddfilt,adcommon.degC,(adcommon.dmact-dmact_prev));
+			yprintf(&pbuf2,"\n\rADC: Vdd: %7.4f %8.4f   Temp: %6.1f %6.1f %i",adcommon.fvdd,adcommon.fvddfilt,adcommon.degC,adcommon.degCfilt,(adcommon.dmact-dmact_prev));
 			dmact_prev = adcommon.dmact;
 
-			yprintf(&pbuf3,"\n\r C:   %d %d %d",adc1data.adcs1sum[ADC1IDX_INTERNALVREF]/ADC1DMANUMSEQ, adcommon.ivdd,adcdbg2);	
+			yprintf(&pbuf4,"\n\r 3:   %d %d %d\n\r 5:   %d %7.4f %7.4f %7.1f",\
+                 adc1data.adcs1sum[ADC1IDX_INTERNALVREF]/ADC1DMANUMSEQ, adcommon.ivdd, adcdbg2,\
+                 adc1data.adcs1sum[ADC1IDX_5VOLTSUPPLY ]/ADC1DMANUMSEQ, adcommon.f5_Vddratio, adcommon.f5vsupply,adcommon.f5vsupplyfilt);
+
+			yprintf(&pbuf3,"\n\rR4: %d %7.2f %7.2f",	adc1data.adcs1sum[ADC1IDX_RESISRPOT]/ADC1DMANUMSEQ, adc1data.adc1calreading[ADC1IDX_RESISRPOT].f,\
+                 adc1data.adc1calreadingfilt[ADC1IDX_RESISRPOT].f);
 		}	
 	}
   /* USER CODE END 5 */ 

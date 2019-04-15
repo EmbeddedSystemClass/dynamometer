@@ -23,9 +23,10 @@
 #define VREFCALVOLTF (VREFCALVOLT * 0.001)  // Factory cal voltage, float (volts)
 
 /* *************************************************************************/
-void adcparamsinit_init_common(struct ADCCALCOMMON* padccommon);
-/*	@brief	: Initialize struct with parameters common to all ADC for this board
- * @param	: padccommon = pointer to struct 
+void adcparamsinit_init_common(struct ADCCALCOMMON* padccommon, struct ADCCHANNELSTUFF* pacsx);
+/*	@brief	: Initialize struct with parameters common to all ADC for this =>board<=
+ * @param	: padccommon = pointer to struct holding parameters
+ * @param	: pacsx = Pointer to struct "everything" for this ADC module
  * *************************************************************************/
 void adcparamsinit_init(struct ADCCHANNELSTUFF* pacsx);
 /*	@brief	: Load structs for compensation, calibration and filtering all ADC channels

@@ -68,24 +68,24 @@ struct ADC1DATA adc1data;
  * *************************************************************************/
 void adcparams_init(void)
 {
-	/* Common to board */
-	adcparamsinit_init_common(&adcommon);
-
 	/* Load parameter values for ADC channels. */
-	adcparamsinit_init(adc1channelstuff);
+	adcparamsinit_init(&adc1channelstuff[0]);
+
+	/* Common to board, plus some pre-computed values. */
+	adcparamsinit_init_common(&adcommon,&adc1channelstuff[0]);
+
 	return;
 }
 
 /* *************************************************************************
- * void adcparams_internal(struct ADCCALCOMMON* pacom, uint16_t* ptemp, uint316_t* pvref);
+ * void adcparams_internal(struct ADCCALCOMMON* pacom, struct ADC1DATA* padc1);
  *	@brief	: Update values used for compensation from Vref and Temperature
  * @param	: pacom = Pointer calibration parameters for Temperature and Vref
- * @param	: ptemp = Pointer to summed DMA reading
- * @param	: pvref = Pointer to summed Vref reading
+ * @param	: padc1 = Pointer to array of ADC reading sums plus other stuff
  * *************************************************************************/
 uint32_t adcdbg1;
 uint32_t adcdbg2;
-void adcparams_internal(struct ADCCALCOMMON* pacom, uint16_t* ptemp, uint16_t* pvref)
+void adcparams_internal(struct ADCCALCOMMON* pacom, struct ADC1DATA* padc1)
 {
 /* 
    Reproduced from 'adcparamsinit.h' for convenience.
@@ -94,22 +94,14 @@ void adcparams_internal(struct ADCCALCOMMON* pacom, uint16_t* ptemp, uint16_t* p
 #define PTS_CAL2     ((uint16_t*)0x1FFF7A2E))  // Pointer to factory calibration: Vtemp
 */
 
-/* The following two computations with floats use 1500 machines cycles. */
-	/* Vdd computed from Vrefint using factory calibration. */
-//	pacom->fvdd  = (3.300 * (float)ADC1DMANUMSEQ * (*PVREFINT_CAL)) /  (float)(*pvref);
-	
-	/* Temperature computed from internal sensor using factory 
-      calibrations @ Vdd = 3.3v, and adjusted for measured Vdd. */
-//	pacom->degC = (pacom->ts_80caldiff) * ( (float)(*ptemp) * ( ( pacom->fvdd * (1.0/3.3) ) ) - pacom->ts_cal1)  + 30;
-
 adcdbg1 = DTWTIME;
-	
 /* The following two computaions with ints uses 119 machines cycles. */
-	pacom->ivdd = (3300 * ADC1DMANUMSEQ) * (*PVREFINT_CAL) / (*pvref);
+	pacom->ivdd = (3300 * ADC1DMANUMSEQ) * (*PVREFINT_CAL) / (padc1->adcs1sum[ADC1IDX_INTERNALVREF]);
 
-	pacom->ui_tmp = (pacom->ivdd * (*ptemp) ) / 3300; // Adjust for Vdd not at 3.3v calibration
+	pacom->ui_tmp = (pacom->ivdd * padc1->adcs1sum[ADC1IDX_INTERNALTEMP] ) / 3300; // Adjust for Vdd not at 3.3v calibration
 	pacom->degC  = pacom->ll_80caldiff * (pacom->ui_tmp - pacom->ui_cal1) + (30 * SCALE1 * ADC1DMANUMSEQ);
 	pacom->degC *= (1.0/(SCALE1*ADC1DMANUMSEQ)); // Fast because power of two.
+	pacom->degCfilt = iir_f1_f(&adc1channelstuff[ADC1IDX_INTERNALTEMP].fpw.iir_f1, pacom->degC);
 
 	pacom->fvdd = pacom->ivdd;
 	pacom->fvdd = pacom->fvdd + pacom->tcoef * (pacom->degC - 30);
@@ -121,9 +113,12 @@ adcdbg1 = DTWTIME;
 	pacom->fvddrecip = 1.0/pacom->fvddfilt; // Pre-compute for multple uses later
 
 	/* Scale up for fixed division, then convert to float and descale. */
-	pacom->f5_Vddratio = ( (adc1data.adcs1sum[ADC1IDX_INTERNALVREF] * (1<<12)) /
-       adc1data.adcs1sum[ADC1IDX_5VOLTSUPPLY]);
+	pacom->f5_Vddratio = ( (adc1data.adcs1sum[ADC1IDX_INTERNALVREF] * (1<<12)) / adc1data.adcs1sum[ADC1IDX_5VOLTSUPPLY]);
 	pacom->f5_Vddratio *= (1.0/(1<<12));
+
+	/* 5v supply voltage. */
+	pacom->f5vsupply = adc1data.adcs1sum[ADC1IDX_5VOLTSUPPLY] * pacom->fvddfilt * pacom->f5vsupplyprecal + pacom->f5vsupplyprecal_offset;
+	pacom->f5vsupplyfilt = iir_f1_f(&adc1channelstuff[ADC1IDX_5VOLTSUPPLY].fpw.iir_f1, pacom->f5vsupply);
 
 adcdbg2 = DTWTIME - adcdbg1;
 
@@ -137,11 +132,10 @@ adcdbg2 = DTWTIME - adcdbg1;
 void adcparams_chan(uint8_t adcidx)
 {
 	struct ADCCHANNELSTUFF* pstuff = &adc1channelstuff[adcidx];
-	struct ADC1DATA* pdata         = &adc1data;
+	struct ADC1DATA* padc1         = &adc1data;
 	union ADCCALREADING* pread     = &adc1data.adc1calreading[adcidx];
-	uint16_t* psum16               = pdata->adcs1sum[adcidx];
+	union ADCCALREADING* preadfilt = &adc1data.adc1calreadingfilt[adcidx];
 	struct ADCCALCOMMON* pacom     = &adcommon;
-
 
 	/* Compensation type */
 /* Assumes 5v sensor supply is measured with an ADC channel.
@@ -153,36 +147,36 @@ void adcparams_chan(uint8_t adcidx)
 #define ADC1PARAM_COMPTYPE_VOLTVDDNO 5     // Vdd (absolute), no Vref compensation applied
 #define ADC1PARAM_COMPTYPE_VOLTV5    6     // 5v (absolute), with 5->Vdd measurement applied
 #define ADC1PARAM_COMPTYPE_VOLTV5NO  7     // 5v (absolute), without 5->Vdd measurement applied
-
 */
 	if (pstuff->xprms.filttype == ADC1PARAM_CALIBTYPE_RAW_UI)
 	{
-		pread->ui = pdata->adcs1sum[adcidx]; // adc sum as unsigned int
+		pread->ui = padc1->adcs1sum[adcidx]; // adc sum as unsigned int
 	}
 	else
 	{
-		pread->f = pdata->adcs1sum[adcidx]; // Convert adc sum to float
+		pread->f = padc1->adcs1sum[adcidx]; // Convert adc sum to float
 	}
 
+	/* Apply compensation to reading. */
 	switch(pstuff->xprms.comptype)
 	{
 	case ADC1PARAM_COMPTYPE_NONE:      // 0 No supply or temp compensation applied
 		break;
 
-	case ADC1PARAM_COMPTYPE_RATIOVDD:  // 1 Vdd (3.3v nominal) ratiometric
-		pread->f *= pread->f * (100.0/(4095.0 * ADCSEQNUM))  ; // ratio: 0 - 100
+	case ADC1PARAM_COMPTYPE_RATIOVDD:  // 1 Vdd (~3.3v nominal) ratiometric
+		pread->f *= pacom->fvddratio;   // ratio: 0 - 100
 		break;
 
 	case ADC1PARAM_COMPTYPE_RATIO5V:   // 2 5v ratiometric with 5->Vdd measurement	
-		pread->f *= pacom->fvddcomp;
+		pread->f *= pacom->fvddfilt * pacom->f5_Vddratio;
 		break;
 
 	case ADC1PARAM_COMPTYPE_RATIO5VNO: // 3 5v ratiometric without 5->Vdd measurement
-		pread->f *= pacom->sensor5vcal;
+		pread->f *= pacom->fvddfilt * (1.0/(4095.0 * ADCSEQNUM));
 		break;
 
 	case ADC1PARAM_COMPTYPE_VOLTVDD:   // 4 Vdd (absolute), Vref compensation applied
-		pread->f *= 1; // TODO
+		pread->f *= pacom->fvddfilt * (1.0/(4095.0 * ADCSEQNUM)); // 
 		break;
 
 	case ADC1PARAM_COMPTYPE_VOLTVDDNO: // 5 Vdd (absolute), no Vref compensation applied
@@ -193,11 +187,45 @@ void adcparams_chan(uint8_t adcidx)
 		pread->f *= 1; // TODO
 		break;	
 	case ADC1PARAM_COMPTYPE_VOLTV5NO:  // 7 5v (absolute), without 5->Vdd measurement applied
-		pread->f *= pacom->sensor5vcal * (1.0/ADCSEQNUM);
+		pread->f *= pacom->sensor5vcal ;
 		break;
 
 	default:
 		return;
 	}
 
+	/* Apply calibration to reading. */
+	switch(pstuff->xprms.calibtype)
+	{
+	case ADC1PARAM_CALIBTYPE_RAW_F: // 0 No calibration applied: FLOAT
+		break;
+	case ADC1PARAM_CALIBTYPE_OFSC:  // 1 Offset & scale (poly ord 0 & 1): FLOAT
+		pread->f = pread->f * pstuff->cal.f[1] + pstuff->cal.f[0];
+		break;
+	case ADC1PARAM_CALIBTYPE_POLY2: // 2 Polynomial 2nd ord: FLOAT
+		break;
+	case ADC1PARAM_CALIBTYPE_POLY3: // 3 Polynomial 3nd ord: FLOAT
+		break;
+	case ADC1PARAM_CALIBTYPE_RAW_UI:// 4 No calibration applied: UNSIGNED INT */
+		break;
+	default:
+		return;
+	}
+
+	/* Apply filtering */
+	switch(pstuff->xprms.filttype)
+	{
+	case ADCFILTERTYPE_NONE:	//	0 Skip filtering
+		preadfilt->f = pread->f;
+		break;
+	case ADCFILTERTYPE_IIR1:	//	1 IIR single pole
+		preadfilt->f = iir_f1_f(&pstuff->fpw.iir_f1, pread->f);
+		break;
+	case ADCFILTERTYPE_IIR2:	//	2 IIR second order
+		// TODO
+		break;
+	default:
+		break;
+	}
+	return;
 }
