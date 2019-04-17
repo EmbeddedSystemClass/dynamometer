@@ -16,7 +16,7 @@ void morse_number(uint32_t n);
 /*	@brief	: Send a character string as Morse code
  * @param	: nx = number to send
  * *************************************************************************/
-void morse_trap(uint8_t x);
+void morse_trap(uint16_t x);
 /*	@brief	: Disable interrupts, Send 'x' and endless loop
  * @param	: x = trap number to flash
  * *************************************************************************/

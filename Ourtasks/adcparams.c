@@ -137,6 +137,8 @@ void adcparams_chan(uint8_t adcidx)
 	union ADCCALREADING* preadfilt = &adc1data.adc1calreadingfilt[adcidx];
 	struct ADCCALCOMMON* pacom     = &adcommon;
 
+float ftmp[2];
+
 	/* Compensation type */
 /* Assumes 5v sensor supply is measured with an ADC channel.
 #define ADC1PARAM_COMPTYPE_NONE      0     // No supply or temp compensation applied
@@ -193,7 +195,13 @@ void adcparams_chan(uint8_t adcidx)
 	default:
 		return;
 	}
-
+/* Reproduced for convenience 
+#define ADC1PARAM_CALIBTYPE_RAW_F  0    // No calibration applied: FLOAT
+#define ADC1PARAM_CALIBTYPE_OFSC   1    // Offset & scale (poly ord 0 & 1): FLOAT
+#define ADC1PARAM_CALIBTYPE_POLY2  2    // Polynomial 2nd ord: FLOAT
+#define ADC1PARAM_CALIBTYPE_POLY3  3    // Polynomial 3nd ord: FLOAT
+#define ADC1PARAM_CALIBTYPE_RAW_UI 4    // No calibration applied: UNSIGNED INT
+*/
 	/* Apply calibration to reading. */
 	switch(pstuff->xprms.calibtype)
 	{
@@ -203,8 +211,17 @@ void adcparams_chan(uint8_t adcidx)
 		pread->f = pread->f * pstuff->cal.f[1] + pstuff->cal.f[0];
 		break;
 	case ADC1PARAM_CALIBTYPE_POLY2: // 2 Polynomial 2nd ord: FLOAT
+		pread->f = pstuff->cal.f[0] +
+                 pstuff->cal.f[1] * pread->f +
+                 pstuff->cal.f[2] * pread->f * pread->f;
 		break;
 	case ADC1PARAM_CALIBTYPE_POLY3: // 3 Polynomial 3nd ord: FLOAT
+		ftmp[0] = pread->f * pread->f; // (this approach saves 4 cycles)
+		ftmp[1] = ftmp[0]  * pread->f;
+		pread->f = pstuff->cal.f[0] +
+                 pstuff->cal.f[1] * pread->f +
+                 pstuff->cal.f[2] * ftmp[0] +
+                 pstuff->cal.f[3] * ftmp[1];
 		break;
 	case ADC1PARAM_CALIBTYPE_RAW_UI:// 4 No calibration applied: UNSIGNED INT */
 		break;

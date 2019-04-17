@@ -145,6 +145,7 @@ int can_driver_put(struct CAN_CTLBLOCK* pctl, struct CANRCVBUF *pcan, u8 maxretr
  * @return	:  0 = OK; 
  *				: -1 = Buffer overrun (no free slots for the new msg)
  *				: -2 = Bogus CAN id rejected
+ *				: -3 = control block pointer NULL
  ******************************************************************************/
 struct CANTAKEPTR* can_iface_add_take(struct CAN_CTLBLOCK*  pctl);
 /* @brief 	: Create a 'take' pointer for accessing CAN msgs in the circular buffer

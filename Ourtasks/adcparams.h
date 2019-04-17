@@ -23,15 +23,13 @@ Ratiometric 5v sensor calibration:
   . Va = (V5 * ratio)/ADCsum[5v]
 Compute
   Calibration ratio = ADCsum[sensor]/Va
-
-
-
 */
 
 #ifndef __ADCPARAMS
 #define __ADCPARAMS
 
 #include "iir_f1.h"
+#include "iir_f2.h"
 
 #define ADC1DMANUMSEQ        16 // Number of DMA scan sequences in 1/2 DMA buffer
 #define ADC1IDX_ADCSCANSIZE  10 // Number ADC channels read
@@ -161,7 +159,7 @@ struct ADCPARAM
 union ADCPARAMWORK
 {
 	struct FILTERIIRF1 iir_f1;	// Filter block for iir_f1
-	// TODO Other filter types to be added
+	struct FILTERIIRF2 iir_f2;	// Filter block for iir_f2
 };
 
 /* "Everthing" for one ADC channel. */
@@ -191,6 +189,10 @@ void adcparams_internal(struct ADCCALCOMMON* pacom, struct ADC1DATA* padc1);
 /*	@brief	: Update values used for compensation from Vref and Temperature
  * @param	: pacom = Pointer calibration parameters for Temperature and Vref
  * @param	: padc1 = Pointer to array of ADC reading sums plus other stuff
+ * *************************************************************************/
+void adcparams_chan(uint8_t adcidx);
+/*	@brief	: calibration, compensation, filtering for channels
+ * @param	: adcidx = index into ADC1 array
  * *************************************************************************/
 
 /* Raw and calibrated ADC1 readings. */

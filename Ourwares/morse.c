@@ -176,7 +176,7 @@ void morse_number(uint32_t nx)
 	return;
 }
 /* *************************************************************************
- * void morse_trap(uint8_t x);
+ * void morse_trap(uint16_t x);
  *	@brief	: Disable interrupts, Send 'x' and endless loop
  * @param	: x = trap number to flash
  * *************************************************************************/

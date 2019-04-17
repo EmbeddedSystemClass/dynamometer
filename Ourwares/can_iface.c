@@ -259,6 +259,7 @@ taskEXIT_CRITICAL();
  * @return	:  0 = OK; 
  *				: -1 = Buffer overrun (no free slots for the new msg)
  *				: -2 = Bogus CAN id rejected
+ *				: -3 = control block pointer NULL
  ******************************************************************************/
 
 extern uint32_t debugTX1c;
@@ -268,7 +269,7 @@ int can_driver_put(struct CAN_CTLBLOCK* pctl,struct CANRCVBUF *pcan,uint8_t maxr
 	volatile struct CAN_POOLBLOCK* pnew;
 	volatile struct CAN_POOLBLOCK* pfor; 	// Loop pointer for the 'for’ loop.
 
-	if (pctl == NULL) return;
+	if (pctl == NULL) return -3;
 
 	/* Reject CAN msg if CAN id is "bogus". */
 	// If 11b is specified && bits in extended address are present it is bogus
