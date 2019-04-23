@@ -6,7 +6,28 @@
 *******************************************************************************/
 
 #include "iir_f2.h"
+#include <math.h>
 
+/* *************************************************************************
+ * void iir_f2_coefficients(struct FILTERIIRF2* pfc, float Fc, float Q, uint16_t skipct);
+ * @brief	: Compute coefficients for Butterworth 2nd order IIR
+ * @param	: pfc = Pointer to struct holding fixed parameters and intermediate variables
+ * @param	: Fc = cutoff freq as ratio, e.g. 0.1
+ * @param	: Q = e.g. .707
+ * @param	: skipct = Number of initial readings to not filter
+ * *************************************************************************/
+void iir_f2_coefficients(struct FILTERIIRF2* pfc, float Fc, float Q, uint16_t skipct)
+{
+	float K    = tanf(Fc * 3.14159265);
+	float norm = 1 / (1 + K / Q + K * K);
+   pfc->b1    = 2 * (K * K - 1) * norm;
+   pfc->b2    = -(1 - K / Q + K * K) * norm;
+	pfc->gain  = 4 * (K * K * norm);
+	pfc->z1    = 0;
+	pfc->z2    = 0;
+	pfc->skipctr = skipct; // Number of initial readings to not filter
+	return;
+}
 /* *************************************************************************
  * float iir_f2_f(struct FILTERIIRF2* pfc, float flt);
  * @brief	: filter input value 
@@ -15,28 +36,27 @@
  * @param	: filter output, given new input
  * *************************************************************************/
 /*
-temp = f_in - a1*state1 - a2*state2
-f_out = b0*temp + b1*state1 + b2*state2
-state2 = state1
-state1 = temp
-out = f_out * 0.1
+		 out = in + z1;
+   	 z1  = in * a1 + z2 - b1 * out;
+   	 z2  = in - b2 * out;
+		outf = out * KK;
 */
 float iir_f2_f(struct FILTERIIRF2* pfc, float flt)
 {
-	float ftmp;
+	float out;
 
 	if (pfc->skipctr > 0)
 	{ // Here, skip starting filter until a few readings
 		pfc->skipctr -= 1;
-		ftmp = 0;
+		out = 0;
 	}
 	else
 	{
-		ftmp = flt - (pfc->a1 * pfc->z1) - (pfc->a2 * pfc->z2);
-		pfc->z2 = pfc->z1;
-		pfc->z1 = ftmp;
+		 out      = flt + pfc->z1;
+   	 pfc->z1  = pfc->z2 - pfc->b1 * out;
+   	 pfc->z2  = pfc->b2 * out;
 	}
-	return (ftmp + (2 * pfc->z1) + pfc->z2) * pfc->gain;
+	return (out * pfc->gain);
 }
 /* *************************************************************************
  * float iir_f2_64b(struct FILTERIIRF2* pfc, uint64_t* pval);

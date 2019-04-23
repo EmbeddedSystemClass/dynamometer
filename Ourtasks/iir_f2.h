@@ -13,9 +13,9 @@
 /* With this struct one pointer will convey everything necessary. */
 struct FILTERIIRF2
 {
-	/* coefficients numberator: {b0 b1 b2} = {1 2 1}; */
-	float a1;      // coefficient
-	float a2;      // coefficient
+	/* coefficients numberator: {a0 a1 a2} = {1 2 1}; */
+	float b1;      // coefficient 1
+	float b2;      // coefficient 2
 	float gain;    // gain scale factor
 	float z1;      // Z^-1 (state1)
 	float z2;      // Z^-1 (state2)
@@ -40,5 +40,12 @@ float iir_f2_32b(struct FILTERIIRF2* pfc, uint32_t val);
  * @param	: pfc = Pointer to struct holding fixed parameters and intermediate variables
  * @param	: val = 32b new value input to filter
  * @param	: filter output, given new input
+ * *************************************************************************/
+void iir_f2_coefficients(struct FILTERIIRF2* pfc, float Fc, float Q, uint16_t skipct);
+/* @brief	: Compute coefficients for Butterworth 2nd order IIR
+ * @param	: pfc = Pointer to struct holding fixed parameters and intermediate variables
+ * @param	: Fc = cutoff freq as ratio, e.g. 0.1
+ * @param	: Q = e.g. .707
+ * @param	: skipct = Number of initial readings to not filter
  * *************************************************************************/
 #endif

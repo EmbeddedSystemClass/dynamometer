@@ -80,6 +80,7 @@
 #include "morse.h"
 #include "MailboxTask.h"
 #include "GatewayTask.h"
+#include "iir_f2.h"
 
 /* USER CODE END Includes */
 
@@ -767,6 +768,24 @@ void StartDefaultTask(void const * argument)
   MX_USB_DEVICE_Init();
 
   /* USER CODE BEGIN 5 */
+
+// ::::::::::::::::::::::::::
+float out;
+float in = 1;//4095;
+float z1 = 0;
+float z2 = 0;
+double outf;
+
+float KK =   0.08033129;//(0.02008282*4.0);
+float b1 = -1.5609759;
+float b2 = -0.64130712;
+
+int ict = 0;
+
+struct FILTERIIRF2 iir2;
+iir_f2_coefficients(&iir2, 0.05, 0.707, 0);
+// ::::::::::::::::::::::::::
+
 	int i;
 
 	#define DEFAULTTSKBIT00	(1 << 0)  // Task notification bit for sw timer: stackusage
@@ -808,6 +827,10 @@ HAL_GPIO_TogglePin(GPIOD,GPIO_PIN_15); // BLUE LED
 	uint32_t dmact_prev = adcommon.dmact;
 
 extern volatile uint32_t adcdbg2;
+
+// ::::::::::::::::::::::::::::::::::::::::::
+		yprintf(&pbuf3,"\n\n\rIIR2: b1 %14.8f b2 %14.8f gain %14.8f\n\r",iir2.b1, iir2.b2,iir2.gain);
+// ::::::::::::::::::::::::::::::::::::::::::
 
 	for ( ;; )
 	{
@@ -852,6 +875,19 @@ extern volatile uint32_t adcdbg2;
 
 			yprintf(&pbuf3,"\n\rR4: %d %7.2f %7.2f",	adc1data.adcs1sum[ADC1IDX_RESISRPOT]/ADC1DMANUMSEQ, adc1data.adc1calreading[ADC1IDX_RESISRPOT].f,\
                  adc1data.adc1calreadingfilt[ADC1IDX_RESISRPOT].f);
+
+// ::::::::::::::::::::::::::::::::::::::::::
+		 out = in + z1;
+   	 z1  = z2 - b1 * out;
+   	 z2  = b2 * out;
+		outf = out * KK;
+		yprintf(&pbuf2,"\n\rIIR2: %3i %14.8f %14.8f %12.8f",ict,z1,z2,outf);
+
+		outf = iir_f2_f(&iir2, 1.0);
+		yprintf(&pbuf4,"\n\rIIR2: %3i %14.8f %14.8f %12.8f",ict++,iir2.z1,iir2.z2,outf);
+
+// ::::::::::::::::::::::::::::::::::::::::::
+
 		}	
 	}
   /* USER CODE END 5 */ 

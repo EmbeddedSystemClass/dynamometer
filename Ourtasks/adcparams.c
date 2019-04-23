@@ -100,21 +100,21 @@ adcdbg1 = DTWTIME;
 
 	pacom->ui_tmp = (pacom->ivdd * padc1->adcs1sum[ADC1IDX_INTERNALTEMP] ) / 3300; // Adjust for Vdd not at 3.3v calibration
 	pacom->degC  = pacom->ll_80caldiff * (pacom->ui_tmp - pacom->ui_cal1) + (30 * SCALE1 * ADC1DMANUMSEQ);
-	pacom->degC *= (1.0/(SCALE1*ADC1DMANUMSEQ)); // Fast because power of two.
+	pacom->degC *= ((float)1.0/(SCALE1*ADC1DMANUMSEQ)); 
 	pacom->degCfilt = iir_f1_f(&adc1channelstuff[ADC1IDX_INTERNALTEMP].fpw.iir_f1, pacom->degC);
 
 	pacom->fvdd = pacom->ivdd;
-	pacom->fvdd = pacom->fvdd + pacom->tcoef * (pacom->degC - 30);
+	pacom->fvdd = pacom->fvdd + pacom->tcoef * (pacom->degC - (float)30);
 
 	pacom->fvddfilt = iir_f1_f(&adc1channelstuff[ADC1IDX_INTERNALVREF].fpw.iir_f1, pacom->fvdd);
 
 	pacom->fvddcomp = pacom->fvddfilt * pacom->sensor5vcalVdd; // Pre-compute for multple uses later
 
-	pacom->fvddrecip = 1.0/pacom->fvddfilt; // Pre-compute for multple uses later
+	pacom->fvddrecip = (float)1.0/pacom->fvddfilt; // Pre-compute for multple uses later
 
 	/* Scale up for fixed division, then convert to float and descale. */
-	pacom->f5_Vddratio = ( (adc1data.adcs1sum[ADC1IDX_INTERNALVREF] * (1<<12)) / adc1data.adcs1sum[ADC1IDX_5VOLTSUPPLY]);
-	pacom->f5_Vddratio *= (1.0/(1<<12));
+	pacom->f5_Vddratio = ( (adc1data.adcs1sum[ADC1IDX_INTERNALVREF] * (float)(1<<12)) / adc1data.adcs1sum[ADC1IDX_5VOLTSUPPLY]);
+	pacom->f5_Vddratio *= ((float)1.0/(float)(1<<12));
 
 	/* 5v supply voltage. */
 	pacom->f5vsupply = adc1data.adcs1sum[ADC1IDX_5VOLTSUPPLY] * pacom->fvddfilt * pacom->f5vsupplyprecal + pacom->f5vsupplyprecal_offset;
@@ -174,15 +174,15 @@ float ftmp[2];
 		break;
 
 	case ADC1PARAM_COMPTYPE_RATIO5VNO: // 3 5v ratiometric without 5->Vdd measurement
-		pread->f *= pacom->fvddfilt * (1.0/(4095.0 * ADCSEQNUM));
+		pread->f *= pacom->fvddfilt * (float)(1.0/(4095.0 * ADCSEQNUM));
 		break;
 
 	case ADC1PARAM_COMPTYPE_VOLTVDD:   // 4 Vdd (absolute), Vref compensation applied
-		pread->f *= pacom->fvddfilt * (1.0/(4095.0 * ADCSEQNUM)); // 
+		pread->f *= pacom->fvddfilt * (float)(1.0/(4095.0 * ADCSEQNUM)); // 
 		break;
 
 	case ADC1PARAM_COMPTYPE_VOLTVDDNO: // 5 Vdd (absolute), no Vref compensation applied
-		pread->f *= pacom->fvddfilt * (1.0/3.3);
+		pread->f *= pacom->fvddfilt * (float)(1.0/3.3);
 		break;
 
 	case ADC1PARAM_COMPTYPE_VOLTV5:    // 6 5v (absolute), with 5->Vdd measurement applied	
