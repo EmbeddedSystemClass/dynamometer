@@ -86,7 +86,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-//#define CONFIGCAN2	// Do initializations for CAN2
+#define CONFIGCAN2	// Do initializations for CAN2
 
 void* verr[8];
 uint32_t verrx = 0;

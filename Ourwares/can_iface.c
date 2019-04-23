@@ -345,9 +345,9 @@ int can_driver_put(struct CAN_CTLBLOCK* pctl,struct CANRCVBUF *pcan,uint8_t maxr
 /* &&&&&&&&&&&&&& BEGIN ABORT MODS &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&& */
 #ifdef YESABORTCODE
 			pctl->abortflag = 1;	// Set flag for interrupt routine use
-			taskEXIT_CRITICAL(); // ==> NOTE: allow interrupts before setting abort!
+//		taskEXIT_CRITICAL(); // ==> NOTE: allow interrupts before setting abort!
 			HAL_CAN_AbortTxRequest(pctl->phcan, CAN_TX_MAILBOX0);
-//			taskEXIT_CRITICAL(); // ==> AFTER! Which fail!
+		taskEXIT_CRITICAL(); // ==> AFTER! Which fails!
 			return 0;
 #endif
 		}
